@@ -9,10 +9,14 @@ to put Playshelf behind a reverse proxy safely.
 Requirements: Docker Engine with the Compose plugin (`docker compose version`).
 
 ```bash
-git clone <repository-url> playshelf
+git clone https://github.com/nan-gits/playshelf.git
 cd playshelf
-docker compose up -d --build
+docker compose up -d
 ```
+
+This uses the published image `ghcr.io/nan-gits/playshelf` (`linux/amd64` and
+`linux/arm64`). `docker compose up -d --build` builds it from the source
+instead.
 
 Open `http://<host>:8080`. All data is stored in `./data` next to
 `docker-compose.yml`:
@@ -30,7 +34,8 @@ To update later:
 
 ```bash
 git pull
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
 ## Configuration
@@ -41,6 +46,7 @@ Settings go in a file named `.env` next to `docker-compose.yml`, one
 
 | Setting | Default | Meaning |
 |---------|---------|---------|
+| `PLAYSHELF_VERSION` | `1` | Image tag: `1` follows the newest 1.x release, `1.0.0` stays on exactly that release |
 | `HTTP_PORT` | `8080` | Port the dashboard is reachable on |
 | `DATA_ROOT` | `./data` | Folder holding `games/`, `data/` and `inbox/`. Relative paths are relative to `docker-compose.yml` |
 | `PUID` / `PGID` | `1000` | User and group id Playshelf runs as and that own the files in `DATA_ROOT` |

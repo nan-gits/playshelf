@@ -31,8 +31,8 @@ First public release.
   password and keeps all existing data with that account.
 - Daily database backup.
 - Docker image for `linux/amd64` and `linux/arm64`, published to the GitHub
-  Container Registry, and a Docker Compose setup with an optional Samba share
-  for the inbox.
+  Container Registry, and a Docker Compose setup that uses it (or builds from
+  source with `--build`) with an optional Samba share for the inbox.
 
 [Unreleased]: https://github.com/nan-gits/playshelf/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/nan-gits/playshelf/releases/tag/v1.0.0

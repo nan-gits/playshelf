@@ -1,10 +1,13 @@
 # Playshelf with Docker Compose.
 #
-#   docker compose up -d --build     start, or rebuild after an update
+#   docker compose up -d             start with the published image
+#   docker compose pull && docker compose up -d   update to the newest image
+#   docker compose up -d --build     build the image from this folder instead
 #   docker compose logs -f playshelf follow the log
 #
 # Everything is optional. To change a value, put it in a file named .env next
 # to this file (example: TZ=Europe/Berlin). Defaults in parentheses:
+#   PLAYSHELF_VERSION (1)   image tag: 1 = newest 1.x release, or e.g. 1.0.0
 #   HTTP_PORT (8080)        port the dashboard is reachable on
 #   DATA_ROOT (./data)      folder holding games/, data/ and inbox/;
 #                           relative paths are relative to this file
@@ -24,8 +27,8 @@
 
 services:
   playshelf:
+    image: ghcr.io/nan-gits/playshelf:${PLAYSHELF_VERSION:-1}
     build: .
-    image: playshelf:local
     restart: unless-stopped
     ports:
       - "${HTTP_PORT:-8080}:8000"

@@ -36,7 +36,25 @@ Running Playshelf on a server with Docker Compose is described step by step in
 [docs/INSTALL.md](docs/INSTALL.md), including updates, backups, the inbox
 folder and moving an existing game collection.
 
-For a quick try on your own machine:
+To try it right away with Docker, without downloading anything else:
+
+```bash
+docker run -d --name playshelf -p 8080:8000 \
+  -v "$PWD/playshelf/games:/srv/games" \
+  -v "$PWD/playshelf/data:/srv/data" \
+  -v "$PWD/playshelf/inbox:/srv/inbox" \
+  ghcr.io/nan-gits/playshelf:1
+```
+
+Then open <http://127.0.0.1:8080> and create the admin account. Games go into
+`playshelf/games/`, one subfolder per game. Stop and remove the test with
+`docker rm -f playshelf`; the folders stay.
+
+The image is published for `linux/amd64` and `linux/arm64` (for example a
+Raspberry Pi 4 or 5) on the
+[GitHub Container Registry](https://github.com/nan-gits/playshelf/pkgs/container/playshelf).
+
+Without Docker, with Python 3.11 or newer:
 
 ```bash
 git clone https://github.com/nan-gits/playshelf.git

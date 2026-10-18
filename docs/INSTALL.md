@@ -38,7 +38,9 @@ again.
 
 ## 2. Get Playshelf
 
-Pick a folder for the installation, for example `/opt/playshelf`:
+The repository holds the Compose files and the optional SMB setup; the
+application itself comes as a ready-made image, so nothing is built on the
+server. Pick a folder for the installation, for example `/opt/playshelf`:
 
 ```bash
 sudo git clone https://github.com/nan-gits/playshelf.git /opt/playshelf
@@ -71,9 +73,13 @@ DHCP reservation in your router, keeps the dashboard's address stable.
 ## 4. Start
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 docker compose ps        # after a few seconds: status "healthy"
 ```
+
+The first start downloads the image `ghcr.io/nan-gits/playshelf:1`, the newest
+1.x release. To build the image from the source in this folder instead, run
+`docker compose up -d --build`.
 
 Open `http://<server>:8080`. The health endpoint `http://<server>:8080/api/health`
 answers `{"status": "ok", ...}` when Playshelf is running.
@@ -101,9 +107,15 @@ collection.
 cd /opt/playshelf
 docker compose exec -u 1000:1000 playshelf python -m app.backup   # optional: extra database backup
 git pull
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 docker image prune -f                                 # remove old images
 ```
+
+`git pull` updates the Compose files, `docker compose pull` the image. To stay
+on one release, set `PLAYSHELF_VERSION=1.0.0` (or another version) in `.env`.
+If you build from source, run `git pull` and `docker compose up -d --build`
+instead.
 
 The database is migrated to the new schema automatically at startup. Games and
 data are not touched, because they live outside the container.

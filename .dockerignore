@@ -1,0 +1,7 @@
+# Only what the image needs
+*
+!pyproject.toml
+!README.md
+!app/
+!docker/entrypoint.sh
+app/**/__pycache__

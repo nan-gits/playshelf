@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "playshelf"
+version = "1.0.0"
+description = "Self-hosted library for HTML games stored on your own disk"
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: FastAPI",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Games/Entertainment",
+]
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic-settings>=2.4",
+    "python-multipart>=0.0.9",
+    "pillow>=10.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/nan-gits/playshelf"
+Issues = "https://github.com/nan-gits/playshelf/issues"
+Changelog = "https://github.com/nan-gits/playshelf/blob/main/CHANGELOG.md"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "httpx2>=2.9",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+playshelf = "app.__main__:main"
+# Old name, still used by existing Docker images
+games-dashboard = "app.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.setuptools.package-data]
+app = ["static/*", "templates/*", "locales/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]

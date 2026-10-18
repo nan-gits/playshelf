@@ -1,0 +1,54 @@
+# Playshelf with Docker Compose.
+#
+#   docker compose up -d --build     start, or rebuild after an update
+#   docker compose logs -f playshelf follow the log
+#
+# Everything is optional. To change a value, put it in a file named .env next
+# to this file (example: TZ=Europe/Berlin). Defaults in parentheses:
+#   HTTP_PORT (8080)        port the dashboard is reachable on
+#   DATA_ROOT (./data)      folder holding games/, data/ and inbox/;
+#                           relative paths are relative to this file
+#   PUID / PGID (1000)      user and group that own the files in DATA_ROOT
+#   TZ (UTC)                time zone for timestamps and logs
+#   AUTH (accounts)         accounts = sign in with user accounts, none = no login
+#   PASSWORD_HASH (empty)   only for upgrades: old single password, becomes admin's
+#   MAX_UPLOAD_MB (4096), MAX_EXTRACTED_MB (8192)  size limits for ZIP imports
+#   KEEP_BACKUPS (3)        old versions kept per game after an update
+#   INBOX_POLL_SECONDS (5), INBOX_SETTLE_SECONDS (10)  inbox folder watcher
+#   UPDATE_CHECK_HOURS (24) interval of the online update check, 0 = off
+#   ADULT_SOURCES (false)   enable the F95Zone and TFGames update sources
+#   UI_LANGUAGE (auto)      interface language: en, de, or auto = browser language
+#
+# The optional SMB share for the inbox is in compose.samba.yml.
+# Details: docs/DEPLOYMENT.md
+
+services:
+  playshelf:
+    build: .
+    image: playshelf:local
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-8080}:8000"
+    environment:
+      - TZ=${TZ:-UTC}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - AUTH=${AUTH:-accounts}
+      - PASSWORD_HASH=${PASSWORD_HASH:-}
+      - MAX_UPLOAD_MB=${MAX_UPLOAD_MB:-4096}
+      - MAX_EXTRACTED_MB=${MAX_EXTRACTED_MB:-8192}
+      - KEEP_BACKUPS=${KEEP_BACKUPS:-3}
+      - INBOX_POLL_SECONDS=${INBOX_POLL_SECONDS:-5}
+      - INBOX_SETTLE_SECONDS=${INBOX_SETTLE_SECONDS:-10}
+      - UPDATE_CHECK_HOURS=${UPDATE_CHECK_HOURS:-24}
+      - ADULT_SOURCES=${ADULT_SOURCES:-false}
+      - UI_LANGUAGE=${UI_LANGUAGE:-auto}
+    volumes:
+      - ${DATA_ROOT:-./data}/games:/srv/games
+      - ${DATA_ROOT:-./data}/data:/srv/data
+      - ${DATA_ROOT:-./data}/inbox:/srv/inbox
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

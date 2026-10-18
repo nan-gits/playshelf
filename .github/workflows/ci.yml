@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    name: Lint and tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: ruff check
+        run: ruff check --output-format=github
+
+      - name: ruff format --check
+        run: ruff format --check
+
+      - name: pytest
+        run: pytest
+
+  docker:
+    name: Build and start the Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build -t playshelf:ci .
+
+      - name: Start the container and wait for the health check
+        run: |
+          docker run -d --name playshelf-ci -p 8000:8000 playshelf:ci
+          for i in $(seq 1 45); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' playshelf-ci)
+            echo "Health: $status"
+            if [ "$status" = "healthy" ]; then
+              curl -fsS http://127.0.0.1:8000/api/health
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs playshelf-ci
+          exit 1
+
+      - name: Does not run as root
+        # Checks the app process (PID 1); `docker exec` itself starts as root.
+        run: test "$(docker exec playshelf-ci awk '/^Uid:/ {print $2}' /proc/1/status)" = "1000"

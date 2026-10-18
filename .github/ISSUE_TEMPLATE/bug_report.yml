@@ -1,0 +1,57 @@
+name: Bug report
+description: Something does not work as expected.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please do not attach copyrighted games;
+        describe the folder layout instead. Security problems go to
+        the private form described in SECURITY.md, not here.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Put a game folder with this layout into the games folder: ...
+        2. Click on ...
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Playshelf version
+      description: Shown at /api/health, or the image tag you use.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How do you run Playshelf?
+      options:
+        - Docker image from GHCR
+        - Docker image built from source
+        - Python (pip / uvicorn)
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, CPU architecture and browser.
+      placeholder: "Debian 13 (amd64), Firefox 140"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant output of `docker compose logs playshelf` or the console. Remove anything private.
+      render: text

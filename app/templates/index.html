@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="{{lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Playshelf</title>
+<link rel="stylesheet" href="/static/style.css">
+<script>
+  // Apply the chosen color scheme before the first paint so nothing flashes
+  try {
+    const theme = localStorage.getItem("theme");
+    if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+  } catch {}
+</script>
+</head>
+<body>
+<header>
+  <div class="title-row">
+    <h1>Playshelf</h1>
+    <div class="title-actions">
+      <button id="theme" type="button" class="secondary small" aria-label="{{theme.label}}"></button>
+      <button id="users-button" type="button" class="secondary small" hidden>{{toolbar.users}}</button>
+      <button id="account" type="button" class="secondary small" title="{{account.button_title}}" hidden></button>
+      <form id="logout" method="post" action="/logout" hidden><button type="submit" class="secondary small">{{logout}}</button></form>
+    </div>
+  </div>
+  <div class="toolbar">
+    <input id="search" type="search" placeholder="{{search.placeholder}}" autocomplete="off" aria-label="{{search.label}}">
+    <select id="source-filter" aria-label="{{filter.source}}"><option value="">{{filter.all_sources}}</option></select>
+    <select id="status-filter" aria-label="{{filter.status}}"><option value="">{{filter.all_statuses}}</option><option value="-">{{filter.no_status}}</option><option value="*">{{filter.favorites_only}}</option></select>
+    <select id="sort" aria-label="{{sort.label}}">
+      <option value="last_played">{{sort.last_played}}</option>
+      <option value="title">{{sort.title}}</option>
+      <option value="added_at">{{sort.added_at}}</option>
+    </select>
+    <label class="check"><input id="fav-first" type="checkbox"> {{filter.favorites_first}}</label>
+    <label class="check"><input id="todo-only" type="checkbox"> {{filter.without_version}}</label>
+    <label class="check"><input id="update-only" type="checkbox"> {{filter.with_update}}</label>
+    <button id="show-stats" type="button" class="secondary">{{toolbar.stats}}</button>
+    <button id="rescan" type="button" class="secondary" hidden>{{toolbar.rescan}}</button>
+    <button id="check-updates" type="button" class="secondary" title="{{toolbar.check_updates_title}}">{{toolbar.check_updates}}</button>
+    <button id="upload" type="button">{{toolbar.upload}}</button>
+    <input id="upload-input" type="file" accept=".zip,application/zip" multiple hidden>
+  </div>
+  <p id="summary" class="muted" aria-live="polite"></p>
+  <p id="notice" class="notice" role="status" hidden></p>
+  <ul id="uploads" class="uploads" aria-label="{{uploads.label}}" hidden></ul>
+</header>
+
+<section id="imports" class="imports" aria-labelledby="imports-heading" hidden>
+  <h2 id="imports-heading">{{imports.heading}}</h2>
+  <p class="muted small-text">{{imports.intro}}</p>
+  <div id="import-list"></div>
+</section>
+
+<div id="drop-zone" class="drop-zone" hidden><p>{{drop_zone}}</p></div>
+
+<main id="list"></main>
+
+<dialog id="editor" aria-labelledby="edit-heading">
+  <form id="edit-form" novalidate>
+    <h2 id="edit-heading">{{editor.heading}}</h2>
+    <p class="muted small-text" id="edit-folder"></p>
+    <label>{{field.name}}<input name="title" required maxlength="200"></label>
+    <label>{{field.version}}<input name="version" required maxlength="50" placeholder="{{field.version_placeholder}}" autocomplete="off"></label>
+    <p class="hint" id="version-hint"></p>
+    <label>{{field.entry}}<select name="entry"></select></label>
+    <label>{{field.source}}<select name="source"><option value="">–</option></select></label>
+    <label>{{field.status}}<select name="status"><option value="">–</option></select></label>
+    <label class="check"><input name="favorite" type="checkbox"> {{field.favorite}}</label>
+    <label>{{field.update_url}}<input name="update_url" type="url" placeholder="https://…" inputmode="url"></label>
+    <div class="update-check">
+      <p class="hint" id="update-result"></p>
+      <button type="button" id="check-now" class="secondary small">{{editor.check_now}}</button>
+    </div>
+    <label>{{field.notes}}<textarea name="notes" rows="3"></textarea></label>
+    <fieldset id="owners" class="owners" hidden>
+      <legend>{{field.owners}}</legend>
+      <div id="owner-list" class="owner-list"></div>
+      <p class="hint" id="owners-hint">{{editor.owners_hint}}</p>
+    </fieldset>
+    <div class="image-field">
+      <div class="thumb preview" aria-hidden="true"></div>
+      <div class="image-controls">
+        <label>{{field.image}}<select id="image-choice"></select></label>
+        <button type="button" id="image-upload" class="secondary small">{{editor.image_upload}}</button>
+        <input id="image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" hidden>
+        <p class="hint">{{editor.image_hint}}</p>
+      </div>
+    </div>
+    <div id="history" class="history" hidden>
+      <h3>{{history.heading}}</h3>
+      <ul id="history-list"></ul>
+      <h3 id="backups-heading">{{history.backups}}</h3>
+      <ul id="backup-list"></ul>
+    </div>
+    <p class="error" id="edit-error" role="alert"></p>
+    <div class="actions">
+      <button type="button" id="edit-cancel" class="secondary">{{action.cancel}}</button>
+      <button type="submit">{{action.save}}</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="stats" class="wide" aria-labelledby="stats-heading">
+  <div class="stats">
+    <h2 id="stats-heading">{{stats.heading}}</h2>
+    <div id="stats-body"><p class="muted">{{loading}}</p></div>
+    <div class="actions">
+      <button type="button" id="stats-close" class="secondary">{{action.close}}</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="account-dialog" aria-labelledby="account-heading">
+  <div class="account">
+    <h2 id="account-heading">{{account.heading}}</h2>
+    <p class="muted small-text" id="account-who"></p>
+    <p class="muted small-text" id="account-inbox"></p>
+    <label>{{account.language}}<select id="account-language">
+      <option value="">{{account.language_auto}}</option>
+      <option value="en">English</option>
+      <option value="de">Deutsch</option>
+    </select></label>
+    <form id="password-form" novalidate>
+      <h3>{{account.password_heading}}</h3>
+      <label>{{account.current_password}}<input name="current" type="password" required autocomplete="current-password"></label>
+      <label>{{account.new_password}}<input name="new" type="password" required minlength="8" autocomplete="new-password"></label>
+      <label>{{account.repeat_password}}<input name="repeat" type="password" required minlength="8" autocomplete="new-password"></label>
+      <p class="error" id="password-error" role="alert"></p>
+      <p class="hint" id="password-done" role="status"></p>
+      <div class="actions"><button type="submit">{{account.change_password}}</button></div>
+    </form>
+    <div class="actions">
+      <button type="button" id="account-close" class="secondary">{{action.close}}</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="users-dialog" class="wide" aria-labelledby="users-heading">
+  <div class="users">
+    <h2 id="users-heading">{{users.heading}}</h2>
+    <p class="muted small-text">{{users.intro}}</p>
+    <ul id="user-list" class="user-list"></ul>
+    <form id="user-form" class="user-form" novalidate>
+      <h3>{{users.add}}</h3>
+      <div class="user-form-fields">
+        <label>{{users.username}}<input name="username" required maxlength="32" autocomplete="off" autocapitalize="none" spellcheck="false"></label>
+        <label>{{users.password}}<input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
+        <label>{{users.role}}<select name="role">
+          <option value="user">{{role.user}}</option>
+          <option value="admin">{{role.admin}}</option>
+        </select></label>
+        <button type="submit">{{users.create}}</button>
+      </div>
+    </form>
+    <p class="error" id="users-error" role="alert"></p>
+    <p class="hint" id="users-notice" role="status"></p>
+    <div class="actions">
+      <button type="button" id="users-close" class="secondary">{{action.close}}</button>
+    </div>
+  </div>
+</dialog>
+
+<template id="card">
+  <article class="card">
+    <div class="thumb" aria-hidden="true"></div>
+    <div class="card-head">
+      <button type="button" class="fav" aria-pressed="false"></button>
+      <h3 class="title"></h3>
+      <span class="version"></span>
+    </div>
+    <p class="meta"></p>
+    <p class="update-status" hidden></p>
+    <p class="notes"></p>
+    <select class="status-select" aria-label="{{field.status}}"><option value="">{{card.no_status}}</option></select>
+    <div class="actions">
+      <a class="play button" target="_blank" rel="noopener">{{card.play}}</a>
+      <a class="update button secondary" target="_blank" rel="noopener noreferrer">{{card.update_page}}</a>
+      <button type="button" class="edit secondary">{{card.edit}}</button>
+      <button type="button" class="forget secondary danger">{{card.forget}}</button>
+    </div>
+  </article>
+</template>
+
+<template id="import-card">
+  <form class="card import" novalidate>
+    <div class="card-head">
+      <h3 class="title"></h3>
+      <span class="version muted"></span>
+    </div>
+    <p class="meta"></p>
+    <p class="suggestion"></p>
+    <label>{{import.target}}<select name="target"></select></label>
+    <label class="new-only">{{field.name}}<input name="title" required maxlength="200"></label>
+    <label>{{field.version}}<input name="version" required maxlength="50" placeholder="{{field.version_placeholder}}" autocomplete="off"></label>
+    <label>{{field.entry}}<select name="entry"></select></label>
+    <p class="error" role="alert"></p>
+    <div class="actions">
+      <button type="submit" class="confirm">{{import.confirm}}</button>
+      <button type="button" class="discard secondary danger">{{import.discard}}</button>
+    </div>
+  </form>
+</template>
+
+<script id="i18n" type="application/json">{{messages}}</script>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Environments and tools
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local configuration and runtime data
+.env
+data/
+games/
+inbox/
+
+# Editor / operating system
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# SMB accounts (compose.samba.yml)
+samba.env

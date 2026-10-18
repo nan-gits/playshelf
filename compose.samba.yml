@@ -1,0 +1,59 @@
+# Optional SMB share for the Playshelf inbox, so ZIP files can be dropped in
+# from Windows, macOS or Linux over the network. Playshelf imports them on
+# its own.
+#
+# Every person signs in with their own SMB account and sees only their own
+# inbox folder, inbox/<user name>/; imports from there belong to them.
+#
+# Enable it:
+#   1. Copy samba.env.example to samba.env and add one line per user:
+#        ACCOUNT_<Playshelf user name>=<SMB password>
+#   2. Add this line to the .env file next to docker-compose.yml (on a
+#      Windows host, separate the file names with ";" instead of ":"):
+#        COMPOSE_FILE=docker-compose.yml:compose.samba.yml
+#   3. Run `docker compose up -d`. Share: \\<host>\inbox
+#
+# Optional settings in .env:
+#   SAMBA_PORT (445)  Windows only connects on port 445, so another port is
+#                     only useful for macOS/Linux clients.
+#   SAMBA_INBOX_PATH (/shares/inbox/%u)  folder each SMB user sees; with
+#                     AUTH=none set it to /shares/inbox (one shared inbox).
+# Keep this share inside your home network; never forward port 445.
+# Details: docs/DEPLOYMENT.md
+
+services:
+  samba:
+    image: ghcr.io/servercontainers/samba:smbd-only-a3.24.2-s4.23.8-r0
+    restart: unless-stopped
+    entrypoint: ["/playshelf-samba-init.sh"]
+    command: ["runsvdir", "-P", "/container/config/runit"]
+    ports:
+      - "${SAMBA_PORT:-445}:445"
+    env_file:
+      - path: samba.env
+        required: true
+    environment:
+      TZ: ${TZ:-UTC}
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      FAIL_FAST: "1"
+      SAMBA_CONF_SERVER_STRING: Playshelf
+      # Playshelf moves files out of the inbox behind Samba's back. With SMB3
+      # directory leases, Windows keeps showing its cached folder listing then,
+      # even after F5.
+      SAMBA_GLOBAL_CONFIG_smb3_SPACE_directory_SPACE_leases: "no"
+      # %u is the signed-in SMB user. The folder must already exist, which it
+      # does once the Playshelf account exists. "force user" makes every file
+      # belong to PUID, the user Playshelf runs as.
+      SAMBA_VOLUME_CONFIG_inbox: >-
+        [inbox]; path = ${SAMBA_INBOX_PATH:-/shares/inbox/%U/}; guest ok = no;
+        read only = no; browseable = yes; invalid users = playshelf root;
+        force user = playshelf; create mask = 0664; directory mask = 0775
+    volumes:
+      - ${DATA_ROOT:-./data}/inbox:/shares/inbox
+      - ./docker/samba-init.sh:/playshelf-samba-init.sh:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

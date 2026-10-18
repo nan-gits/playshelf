@@ -1,0 +1,109 @@
+name: Release
+
+# Pushing a tag like v0.2.0 builds the multi-arch image, pushes it to the
+# GitHub Container Registry as ghcr.io/<owner>/<repo> and creates a GitHub
+# release with the matching CHANGELOG section. Running the workflow by hand
+# only builds the image for both architectures, without pushing anything.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build image and publish release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the GitHub release
+      packages: write   # push to ghcr.io
+    env:
+      PUBLISH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check version and read release notes
+        if: env.PUBLISH == 'true'
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          package_version=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          app_version=$(python3 -c 'import re; print(re.search(r"__version__ = \"(.+)\"", open("app/__init__.py").read()).group(1))')
+          if [ "$version" != "$package_version" ] || [ "$version" != "$app_version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match pyproject.toml ($package_version) and app/__init__.py ($app_version)"
+            exit 1
+          fi
+          # The section between "## [<version>]" and the next heading or the
+          # link references at the end of the file.
+          awk -v v="$version" '
+            index($0, "## [" v "]") == 1 { found = 1; next }
+            found && (/^## \[/ || /^\[[^]]+\]: /) { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "::error::CHANGELOG.md has no entries for version $version"
+            exit 1
+          fi
+          if grep -q "^## \[$version\] - unreleased" CHANGELOG.md; then
+            echo "::error::Set the release date of version $version in CHANGELOG.md"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the GitHub Container Registry
+        if: env.PUBLISH == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          # 1.2.3, 1.2 and 1 (no "0" tag while the major version is 0);
+          # "latest" is added automatically for non-prerelease versions.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+            type=sha,enable=${{ github.event_name == 'workflow_dispatch' }}
+          labels: |
+            org.opencontainers.image.title=Playshelf
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
+
+      - name: Build and push the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ env.PUBLISH == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Create the GitHub release
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=""
+          case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" --verify-tag $prerelease \
+            --title "Playshelf $VERSION" --notes-file release-notes.md

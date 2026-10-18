@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-10-18
+
+### Fixed
+
+- F95Zone update check: every F95Zone thread page now asks for a browser
+  check (bot protection), so the check failed with error 403. Playshelf now
+  reads the version and the time of the last update from F95Zone's
+  "Latest Updates" data, found by the game's title and matched by the thread
+  number in the update link. Titles with special characters such as `!`,
+  `~` or `&` are searched in several spellings.
+- A page that asks for a browser check is shown as "check by hand", with a
+  link to the page, instead of a red error. Bot protection is still never
+  circumvented.
+- Uploading a ZIP file that is larger than `MAX_UPLOAD_MB` is refused in the
+  browser at once, with the limit in the message, instead of after the
+  upload. A reverse proxy that rejects the file (error 413) or stops reading
+  it no longer leaves the upload stuck: the message names the proxy as the
+  likely cause.
+
+### Added
+
+- `GET /api/imports/limits` returns the upload and extraction limits.
+- Documentation: the reverse proxy section covers Nginx Proxy Manager step by
+  step and how `MAX_UPLOAD_MB`, `MAX_EXTRACTED_MB` and the proxy limit fit
+  together for large games.
+
 ## [1.0.1] - 2026-10-18
 
 ### Changed
@@ -51,6 +77,7 @@ First public release.
   Container Registry, and a Docker Compose setup with an optional Samba share
   for the inbox.
 
-[Unreleased]: https://github.com/nan-gits/playshelf/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/nan-gits/playshelf/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/nan-gits/playshelf/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/nan-gits/playshelf/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/nan-gits/playshelf/releases/tag/v1.0.0

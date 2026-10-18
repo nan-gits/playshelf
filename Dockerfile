@@ -1,7 +1,7 @@
 # Playshelf container image, based on the official slim Python image.
 # Games, database and inbox live outside the container (volumes).
 
-FROM python:3.13-slim
+FROM python:3.14-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

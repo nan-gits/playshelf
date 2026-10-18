@@ -183,16 +183,13 @@ def test_scan_reports_new_found_missing(api: TestClient, settings: Settings) -> 
     assert kettle["missing"] is True
 
 
-def test_delete_only_missing_and_never_files(api: TestClient, settings: Settings) -> None:
+def test_delete_entry_with_missing_folder(api: TestClient, settings: Settings) -> None:
     gid = game_id(api, "CK")
-    response = api.delete(f"/api/games/{gid}")
-    assert response.status_code == 409
-    assert (settings.games_dir / "CK" / "index.html").exists()
-
     (settings.games_dir / "CK").rename(settings.games_dir.parent / "CK-gone")
     api.post("/api/scan")
     assert api.delete(f"/api/games/{gid}").status_code == 204
     assert api.get(f"/api/games/{gid}").status_code == 404
+    # Only the games folder is touched
     assert (settings.games_dir.parent / "CK-gone" / "index.html").exists()
     assert api.delete(f"/api/games/{gid}").status_code == 404
     # Scanning again does not add anything back

@@ -2,6 +2,9 @@
 
 Until it is confirmed, an import stays extracted in `DATA_DIR/imports/<staging>/<folder>`.
 Only confirming moves it into the library; discarding deletes the staging folder.
+
+Everything else that moves or deletes game and backup folders lives here as well
+(updates, restoring, deleting games and backups), so that it all runs under one lock.
 """
 
 import contextlib
@@ -18,6 +21,8 @@ from app.config import Settings
 from app.db import ACTION_NEW, ACTION_RESTORE, ACTION_UPDATE, PLAY_FIELDS, Database
 
 MB = 1024 * 1024
+# A deleted game folder is renamed to this hidden name before its files are removed
+DELETED_PREFIX = ".deleted-"
 
 # Installing, discarding and restoring move folders; never two at the same time
 library_lock = threading.Lock()
@@ -58,7 +63,11 @@ def receive(
 
 
 def cleanup(settings: Settings, db: Database) -> None:
-    """Reconciles staging folders and database, for example after a crash while extracting."""
+    """Reconciles staging folders and database, for example after a crash while extracting,
+    and removes game folders left over from a delete that was interrupted."""
+    if settings.games_dir.is_dir():
+        for path in settings.games_dir.glob(f"{DELETED_PREFIX}*"):
+            shutil.rmtree(path, ignore_errors=True)
     if not settings.imports_dir.is_dir():
         return
     known = set()
@@ -357,3 +366,108 @@ def restore(
         with contextlib.suppress(OSError):
             source.parent.rmdir()
     return images.refresh(settings, db, restored)
+
+
+# Deleting games and backups
+
+
+def _inside(base: Path, relative: str, depth: int) -> Path | None:
+    """`base/relative` if it lies exactly `depth` levels inside `base` and is no link;
+    otherwise None. Protects against paths from the database that point elsewhere."""
+    path = base / relative
+    try:
+        resolved, root = path.resolve(), base.resolve()
+    except OSError:
+        return None
+    if path.is_symlink() or len(PurePosixPath(relative).parts) != depth:
+        return None
+    parents = resolved.parents
+    if len(parents) <= depth or parents[depth - 1] != root:
+        return None
+    return path
+
+
+def _remove_backup_folder(settings: Settings, relative: str) -> None:
+    path = _inside(settings.backups_dir, relative, depth=2)
+    if path is None or not path.is_dir():
+        return
+    shutil.rmtree(path, ignore_errors=True)
+    # backups/<game>/ goes too once its last version is gone
+    with contextlib.suppress(OSError):
+        path.parent.rmdir()
+
+
+def delete_backup(settings: Settings, db: Database, backup: dict[str, Any]) -> None:
+    """Deletes a backup: its entry and its folder."""
+    with library_lock:
+        db.delete_backup(backup["id"])
+        _remove_backup_folder(settings, backup["path"])
+
+
+def orphan_backups(settings: Settings, db: Database) -> list[dict[str, Any]]:
+    """Backup folders (backups/<game>/<version>) that no game refers to any more, for
+    example from entries removed with older versions, which kept backups on disk."""
+    root = settings.backups_dir
+    if not root.is_dir():
+        return []
+    known = {backup["path"] for backup in db.list_all_backups()}
+    found = []
+    for parent in sorted(p for p in root.iterdir() if p.is_dir() and not p.is_symlink()):
+        for folder in sorted(p for p in parent.iterdir() if p.is_dir() and not p.is_symlink()):
+            path = f"{parent.name}/{folder.name}"
+            if path not in known:
+                found.append({"path": path, "size": scanner.folder_size(folder)})
+    return found
+
+
+def delete_orphan_backup(settings: Settings, db: Database, path: str) -> None:
+    """Deletes a backup folder that no game refers to. Raises ImportConflict otherwise."""
+    with library_lock:
+        if path not in {orphan["path"] for orphan in orphan_backups(settings, db)}:
+            raise ImportConflict("There is no such backup folder without a game.")
+        _remove_backup_folder(settings, path)
+
+
+def delete_game(settings: Settings, db: Database, game: dict[str, Any]) -> None:
+    """Deletes a game for everyone: its folder, its backups, its entry with all play data.
+
+    The folder is first renamed to a hidden name inside the games folder, which is
+    instant, so the game never stays half deleted in the library; only then are the
+    files removed. If the database cannot be changed, the folder is renamed back.
+    """
+    trash = None
+    with library_lock:
+        backups = db.list_backups(game["id"])
+        folder = settings.games_dir / game["folder"]
+        if folder.exists() or folder.is_symlink():
+            if _inside(settings.games_dir, game["folder"], depth=1) is None:
+                raise ImportConflict(
+                    "The game folder is a link or lies outside the games folder."
+                    " Please remove it by hand."
+                )
+            trash = settings.games_dir / f"{DELETED_PREFIX}{new_token()}"
+            os.rename(folder, trash)
+        try:
+            db.delete_game(game["id"])
+        except BaseException:
+            if trash is not None:
+                os.rename(trash, folder)
+            raise
+        images.forget(settings, game["id"])
+        for backup in backups:
+            _remove_backup_folder(settings, backup["path"])
+    if trash is not None:
+        shutil.rmtree(trash, ignore_errors=True)
+
+
+def remove_from_library(
+    settings: Settings, db: Database, game: dict[str, Any], user: dict[str, Any]
+) -> bool:
+    """Takes a game out of one account's library. If no other account uses it any more
+    (owns it or has play data for it), the game is deleted with its files.
+    Returns True if the game was deleted."""
+    db.remove_from_library(game["id"], user["id"])
+    if db.game_users(game["id"]):
+        return False
+    delete_game(settings, db, game)
+    return True

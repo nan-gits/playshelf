@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 
     games_dir: Path = Field(default=Path("games"), description="Game library")
     data_dir: Path = Field(default=Path("data"), description="Database and backups")
-    inbox_dir: Path = Field(default=Path("inbox"), description="Inbox folder for ZIP files")
+    inbox_dir: Path = Field(default=Path("inbox"), description="Inbox folder for archives")
     host: str = Field(default="127.0.0.1", description="Address the server binds to")
     port: int = Field(default=8000, ge=1, le=65535, description="Web server port")
     auth: Literal["accounts", "none"] = Field(
@@ -31,7 +31,9 @@ class Settings(BaseSettings):
         default=None,
         description="Password of older versions; becomes the first admin's password once",
     )
-    max_upload_mb: int = Field(default=4096, ge=1, description="Maximum size of a ZIP archive")
+    max_upload_mb: int = Field(
+        default=4096, ge=1, description="Maximum size of an uploaded archive"
+    )
     max_extracted_mb: int = Field(
         default=8192, ge=1, description="Maximum size of an archive's extracted content"
     )
@@ -40,7 +42,7 @@ class Settings(BaseSettings):
         default=5, ge=0, description="Inbox polling interval, 0 = off"
     )
     inbox_settle_seconds: float = Field(
-        default=10, ge=0, description="How long a ZIP file must stay unchanged"
+        default=10, ge=0, description="How long an inbox file must stay unchanged"
     )
 
     update_check_hours: float = Field(

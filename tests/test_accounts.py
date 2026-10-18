@@ -118,6 +118,82 @@ def test_play_data_is_per_user(admin: TestClient, anna: TestClient) -> None:
     assert admin.get("/api/stats").json()["games"] == 2
 
 
+def test_remove_from_own_library(
+    app_settings: Settings, admin: TestClient, anna: TestClient
+) -> None:
+    share(admin, "Shared 1_0", "admin", "anna")
+    shared = game_id(admin, "Shared 1_0")
+    anna.patch(f"/api/games/{shared}", json={"favorite": True})
+    assert anna.post(f"/api/games/{shared}/remove").json() == {"deleted": False}
+    assert anna.get("/api/games").json() == []
+    assert (app_settings.games_dir / "Shared 1_0" / "index.html").is_file()
+    owners = next(g["owners"] for g in admin.get("/api/games").json() if g["id"] == shared)
+    assert len(owners) == 1
+    assert anna.post(f"/api/games/{shared}/remove").status_code == 404
+
+
+def test_remove_keeps_a_game_someone_else_played(
+    app_settings: Settings, admin: TestClient, anna: TestClient
+) -> None:
+    share(admin, "Admin Only", "anna")
+    game = game_id(admin, "Admin Only")
+    admin.get(f"/play/{game}", follow_redirects=False)
+    assert anna.post(f"/api/games/{game}/remove").json() == {"deleted": False}
+    assert (app_settings.games_dir / "Admin Only").is_dir()
+
+
+def test_remove_by_the_last_user_deletes_files(
+    app_settings: Settings, admin: TestClient, anna: TestClient
+) -> None:
+    share(admin, "Admin Only", "anna")
+    game = game_id(admin, "Admin Only")
+    assert anna.post(f"/api/games/{game}/remove").json() == {"deleted": True}
+    assert not (app_settings.games_dir / "Admin Only").exists()
+    assert admin.get(f"/api/games/{game}").status_code == 404
+
+
+def test_only_admins_delete_for_everyone(
+    app_settings: Settings, admin: TestClient, anna: TestClient
+) -> None:
+    share(admin, "Shared 1_0", "admin", "anna")
+    shared = game_id(admin, "Shared 1_0")
+    assert anna.delete(f"/api/games/{shared}").status_code == 403
+    assert admin.delete(f"/api/games/{shared}").status_code == 204
+    assert anna.get("/api/games").json() == []
+    assert not (app_settings.games_dir / "Shared 1_0").exists()
+
+
+def test_overview_shows_who_has_which_games(admin: TestClient, anna: TestClient) -> None:
+    share(admin, "Shared 1_0", "admin", "anna")
+    shared = game_id(admin, "Shared 1_0")
+    anna.get(f"/play/{shared}", follow_redirects=False)
+    assert anna.get("/api/overview").status_code == 403
+    data = admin.get("/api/overview").json()
+    people = {u["username"]: u for u in data["users"]}
+    assert [g["title"] for g in people["anna"]["games"]] == ["Shared 1_0"]
+    assert people["anna"]["games"][0]["play_count"] == 1
+    assert people["admin"]["games"][0]["play_count"] == 0
+    assert [g["title"] for g in data["unowned"]] == ["Admin Only"]
+
+
+def test_backups_are_per_visible_game(app, admin: TestClient, anna: TestClient) -> None:
+    db = app.state.db
+    hidden = game_id(admin, "Admin Only")
+    db.replace_version(
+        hidden,
+        folder="Admin Only",
+        entry="index.html",
+        version="2",
+        version_hint=None,
+        action="update",
+        backup={"version": "1", "folder": "Admin Only", "entry": "index.html", "path": "A/1"},
+    )
+    [backup] = admin.get("/api/backups").json()["backups"]
+    assert anna.get("/api/backups").json() == {"backups": [], "keep": 3}
+    assert anna.delete(f"/api/backups/{backup['id']}").status_code == 404
+    assert anna.delete("/api/backups", params={"path": "A/1"}).status_code == 403
+
+
 def test_only_admins_manage(anna: TestClient) -> None:
     assert anna.get("/api/me").json()["user"]["is_admin"] is False
     for method, path in [

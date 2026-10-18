@@ -284,6 +284,7 @@ async function openEditor(game) {
   entry.replaceChildren(new Option(game.entry, game.entry, true, true));
   entry.disabled = true;
   $("#edit-error").textContent = "";
+  $("#edit-delete").textContent = t(isAdmin() ? "delete.button" : "remove.button");
   showUpdateResult(game);
   $("#history").hidden = true;
   showOwners(game);
@@ -594,16 +595,24 @@ async function loadHistory(game) {
     ...data.backups.map((b) => {
       const item = document.createElement("li");
       const text = document.createElement("span");
-      text.textContent = t("history.backup_line", {
+      const line = t("history.backup_line", {
         version: b.version ? versionText(b.version) : t("history.no_version"),
         date: dateTimeFormat.format(new Date(b.created_at)),
       });
+      text.textContent = b.size === null ? line : `${line} · ${sizeText(b.size)}`;
       const button = document.createElement("button");
       button.type = "button";
       button.className = "secondary small";
       button.textContent = t("history.restore");
       button.addEventListener("click", () => restoreBackup(game, b, button));
-      item.append(text, button);
+      const remove = el("button", "secondary small danger", t("history.delete_backup"));
+      remove.type = "button";
+      remove.addEventListener("click", async () => {
+        if (await deleteBackup({ ...b, title: game.title }, remove)) loadHistory(game);
+      });
+      const buttons = el("span", "buttons");
+      buttons.append(button, remove);
+      item.append(text, buttons);
       return item;
     }),
   );
@@ -626,6 +635,46 @@ async function restoreBackup(game, backup, button) {
   } catch (err) {
     $("#edit-error").textContent = err.message;
     button.disabled = false;
+  }
+}
+
+// Deleting: admins delete a game for everyone, other accounts remove it from their library
+
+async function deleteGame(game) {
+  const admin = isAdmin();
+  if (!confirm(t(admin ? "delete.confirm" : "remove.confirm", { title: game.title }))) return;
+  const button = $("#edit-delete");
+  button.disabled = true;
+  try {
+    let notice;
+    if (admin) {
+      await api(`/api/games/${game.id}`, { method: "DELETE" });
+      notice = t("delete.done", { title: game.title });
+    } else {
+      const result = await api(`/api/games/${game.id}/remove`, { method: "POST" });
+      notice = t(result.deleted ? "remove.done_deleted" : "remove.done", { title: game.title });
+    }
+    $("#editor").close();
+    await load();
+    showNotice(notice);
+  } catch (err) {
+    $("#edit-error").textContent = err.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function deleteBackup(backup, button) {
+  const version = backup.version ? versionText(backup.version) : t("history.no_version");
+  if (!confirm(t("backup.delete_confirm", { title: backup.title, version }))) return false;
+  button.disabled = true;
+  try {
+    await api(`/api/backups/${backup.id}`, { method: "DELETE" });
+    return true;
+  } catch (err) {
+    showNotice(err.message);
+    button.disabled = false;
+    return false;
   }
 }
 
@@ -748,6 +797,145 @@ async function openStats() {
   } catch (err) {
     $("#stats-body").replaceChildren(el("p", "error", err.message));
   }
+}
+
+// Backups of all games the user sees; for admins also folders without a game
+
+async function openBackups() {
+  $("#backups-body").replaceChildren(el("p", "muted", t("loading")));
+  $("#backups-error").textContent = "";
+  $("#backups").showModal();
+  await renderBackups();
+}
+
+function itemRow(name, value, button) {
+  const item = el("li");
+  item.append(el("span", "name", name), el("span", "value", value));
+  if (button) item.append(button);
+  return item;
+}
+
+function deleteButton(action) {
+  const button = el("button", "secondary small danger", t("history.delete_backup"));
+  button.type = "button";
+  button.addEventListener("click", () => action(button));
+  return button;
+}
+
+async function renderBackups() {
+  let data;
+  try {
+    data = await api("/api/backups");
+  } catch (err) {
+    $("#backups-body").replaceChildren(el("p", "error", err.message));
+    return;
+  }
+  $("#backups-intro").textContent = t("backups.intro", { keep: data.keep });
+  const total = data.backups.reduce((sum, b) => sum + (b.size || 0), 0);
+  const parts = [];
+  if (!data.backups.length) {
+    parts.push(el("p", "muted", t("backups.none")));
+  } else {
+    parts.push(el("p", "", t("backups.summary", { count: data.backups.length, size: sizeText(total) })));
+    const list = el("ul", "item-list scroll-list");
+    for (const backup of data.backups) {
+      const version = backup.version ? versionText(backup.version) : t("history.no_version");
+      const date = t("backups.line", { date: dateFormat.format(new Date(backup.created_at)) });
+      const size = backup.size === null ? t("stats.unknown") : sizeText(backup.size);
+      const remove = deleteButton(async (button) => {
+        if (await deleteBackup(backup, button)) {
+          await renderBackups();
+          $("#backups-error").textContent = "";
+        }
+      });
+      list.append(itemRow(`${backup.title} ${version}`, `${date} · ${size}`, remove));
+    }
+    parts.push(list);
+  }
+  if (data.orphans?.length) {
+    parts.push(el("h3", "", t("backups.orphans")), el("p", "muted small-text", t("backups.orphans_hint")));
+    const list = el("ul", "item-list");
+    for (const orphan of data.orphans) {
+      const remove = deleteButton(async (button) => {
+        if (!confirm(t("backups.orphan_confirm", { path: orphan.path }))) return;
+        button.disabled = true;
+        try {
+          await api(`/api/backups?path=${encodeURIComponent(orphan.path)}`, { method: "DELETE" });
+          await renderBackups();
+        } catch (err) {
+          $("#backups-error").textContent = err.message;
+          button.disabled = false;
+        }
+      });
+      list.append(itemRow(orphan.path, sizeText(orphan.size), remove));
+    }
+    parts.push(list);
+  }
+  $("#backups-body").replaceChildren(...parts);
+}
+
+// Library overview (admins): which account has which games
+
+function overviewSection(title, summary, games, userId, hint) {
+  const box = el("details");
+  const head = el("summary");
+  head.append(el("strong", "", title), el("span", "muted", summary));
+  box.append(head);
+  if (hint) box.append(el("p", "muted small-text", hint));
+  if (!games.length) {
+    box.append(el("p", "muted small-text", t("overview.no_games")));
+    return box;
+  }
+  const list = el("ul", "item-list");
+  for (const game of games) {
+    const meta = [];
+    if (userId !== null) {
+      meta.push(lastPlayedText(game.last_played));
+      if (game.play_count) meta.push(t("card.started", { count: game.play_count }));
+      if (game.status) meta.push(statusLabel(game.status));
+    }
+    if (game.missing) meta.unshift(t("card.folder_missing"));
+    if (game.size !== null) meta.push(sizeText(game.size));
+    list.append(itemRow(`${game.favorite ? "★ " : ""}${gameLabel(game)}`, meta.join(" · ")));
+  }
+  box.append(list);
+  return box;
+}
+
+async function openOverview() {
+  const body = $("#overview-body");
+  body.replaceChildren(el("p", "muted", t("loading")));
+  $("#overview").showModal();
+  let data;
+  try {
+    data = await api("/api/overview");
+  } catch (err) {
+    body.replaceChildren(el("p", "error", err.message));
+    return;
+  }
+  const sections = data.users.map((user) =>
+    overviewSection(
+      `${user.username} (${t(`role.${user.role}`)})`,
+      t("overview.user", { count: user.games.length, size: sizeText(user.size) }),
+      user.games,
+      user.id,
+    ),
+  );
+  if (data.unowned.length) {
+    const size = data.unowned.reduce((sum, g) => sum + (g.size || 0), 0);
+    sections.push(
+      overviewSection(
+        t("overview.unowned"),
+        t("overview.user", { count: data.unowned.length, size: sizeText(size) }),
+        data.unowned,
+        null,
+        t("overview.unowned_hint"),
+      ),
+    );
+  }
+  const box = el("div", "overview");
+  box.append(...sections);
+  body.replaceChildren(box);
 }
 
 // Pending imports
@@ -913,8 +1101,10 @@ function removeUploadItem(item) {
 function queueUploads(files) {
   for (const file of files) {
     const view = uploadItem(file);
-    if (!file.name.toLowerCase().endsWith(".zip")) {
-      failUpload(view, t("upload.not_zip"));
+    // Without the limits yet, the server decides
+    const formats = state.limits?.formats;
+    if (formats && !formats.some((suffix) => file.name.toLowerCase().endsWith(suffix))) {
+      failUpload(view, t("upload.not_archive", { formats: formats.join(", ") }));
       continue;
     }
     const limit = state.limits?.max_upload_bytes;
@@ -955,7 +1145,7 @@ function uploadFile(file, view) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `/api/imports?filename=${encodeURIComponent(file.name)}`);
-    xhr.setRequestHeader("Content-Type", "application/zip");
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
     let sent = false;
     let stalled = false;
     let watchdog;
@@ -1044,6 +1234,7 @@ async function loadMe() {
   $("#account").hidden = !accounts;
   $("#account-name").textContent = user.username;
   $("#users-button").hidden = !(accounts && user.is_admin);
+  $("#overview-button").hidden = !(accounts && user.is_admin);
   $("#rescan").hidden = !user.is_admin;
   if (accounts && user.is_admin) await loadUsers();
 }
@@ -1227,7 +1418,12 @@ async function init() {
     loadMe(),
   ]);
   // Without the limits the server still refuses a file that is too large, only later
-  api("/api/imports/limits").then((limits) => (state.limits = limits), () => {});
+  api("/api/imports/limits").then((limits) => {
+    state.limits = limits;
+    // The file picker offers the formats this server imports (".tar.gz" as ".gz")
+    const endings = new Set(limits.formats.map((suffix) => `.${suffix.split(".").pop()}`));
+    $("#upload-input").accept = [...endings].join(",");
+  }, () => {});
   for (const source of state.sources) {
     $("#source-filter").append(new Option(sourceLabel(source), source));
     $("#edit-form").elements.source.append(new Option(sourceLabel(source), source));
@@ -1251,6 +1447,16 @@ async function init() {
   $("#check-now").addEventListener("click", checkNow);
   $("#show-stats").addEventListener("click", openStats);
   $("#stats-close").addEventListener("click", () => $("#stats").close());
+  $("#show-backups").addEventListener("click", openBackups);
+  $("#backups-close").addEventListener("click", () => $("#backups").close());
+  // Deleted backups change the sizes on the tiles and in the statistics
+  $("#backups").addEventListener("close", load);
+  $("#overview-button").addEventListener("click", openOverview);
+  $("#overview-close").addEventListener("click", () => $("#overview").close());
+  $("#edit-delete").addEventListener("click", () => {
+    const game = state.games.find((g) => String(g.id) === $("#edit-form").dataset.id);
+    if (game) deleteGame(game);
+  });
   $("#upload").addEventListener("click", () => $("#upload-input").click());
   $("#upload-input").addEventListener("change", (event) => {
     queueUploads(event.target.files);

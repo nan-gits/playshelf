@@ -1,6 +1,7 @@
-"""Inbox folder: import new ZIP files in INBOX_DIR automatically.
+"""Inbox folder: import new archives in INBOX_DIR automatically.
 
-The folder is polled regularly. A ZIP file only counts as completely copied once
+The folder is polled regularly. An archive (ZIP, and RAR, 7z or tar where libarchive
+is installed) only counts as completely copied once
 its size and modification time stay unchanged for `settle_seconds`, so files that
 are still being copied (for example over SMB) are not touched too early. It then
 goes through the same import as an upload and appears under pending imports. The
@@ -11,12 +12,13 @@ Files already present at startup are handled the same way, including files that
 were dropped in during a restart.
 
 Each account has its own subfolder, `INBOX_DIR/<user name>/`, with its own
-`processed/` and `failed/`; its imports belong to that account. ZIP files placed
+`processed/` and `failed/`; its imports belong to that account. Archives placed
 directly in `INBOX_DIR` belong to the first admin. Subfolders that match no
 account are ignored.
 
-Other archives (RAR, 7z, tar) are not imported; they are moved to `failed/` with
-a note, so they do not lie in the inbox without any feedback.
+Archives of a kind that cannot be imported (a lone .gz, parts of a split archive,
+RAR without libarchive …) are moved to `failed/` with a note, so they do not lie in
+the inbox without any feedback.
 """
 
 import asyncio
@@ -27,15 +29,25 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from app import imports
+from app import importer, imports
 from app.config import Settings
 from app.db import Database
 from app.importer import ImportRejected
 
 DONE_DIR = "processed"
 FAILED_DIR = "failed"
-OTHER_ARCHIVES = {".rar", ".7z", ".tar", ".gz", ".tgz", ".bz2", ".xz"}
-NOT_A_ZIP = "Only ZIP files are imported. Pack the game folder as a .zip file and try again."
+# Archives that are never imported but get a note in failed/; supported ones come from
+# importer.supported_suffixes()
+OTHER_ARCHIVES = {".rar", ".7z", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".zst", ".001", ".r00"}
+
+
+def unsupported_note() -> str:
+    return (
+        "This kind of archive is not imported. Supported: "
+        f"{', '.join(importer.supported_suffixes())}. Pack the game folder as one such"
+        " archive and try again."
+    )
+
 
 log = logging.getLogger(__name__)
 
@@ -72,13 +84,13 @@ class InboxWatcher:
                 (p, user_id)
                 for p in folder.iterdir()
                 if p.is_file()
-                and p.suffix.lower() in {".zip", *OTHER_ARCHIVES}
+                and (importer.archive_suffix(p.name) or p.suffix.lower() in OTHER_ARCHIVES)
                 and not p.name.startswith((".", "~"))
             )
         return sorted(found)
 
     def scan_once(self, now: float | None = None) -> list[Path]:
-        """Processes all completely copied ZIPs; returns the processed paths."""
+        """Processes all completely copied archives; returns the processed paths."""
         now = time.monotonic() if now is None else now
         ready = []
         current = set()
@@ -102,9 +114,9 @@ class InboxWatcher:
         return [path for path, _ in ready]
 
     def process(self, path: Path, user_id: int) -> None:
-        if path.suffix.lower() != ".zip":
-            self._move(path, FAILED_DIR, NOT_A_ZIP)
-            log.info("Inbox: %s rejected: not a ZIP file", path.name)
+        if not importer.archive_suffix(path.name):
+            self._move(path, FAILED_DIR, unsupported_note())
+            log.info("Inbox: %s rejected: not a supported archive", path.name)
             return
         try:
             imp = imports.receive(self.settings, self.db, path, path.name, user_id)

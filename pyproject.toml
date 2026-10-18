@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "playshelf"
-version = "1.0.2"
+version = "1.1.0"
 description = "Self-hosted library for HTML games stored on your own disk"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
@@ -23,6 +23,8 @@ dependencies = [
     "pydantic-settings>=2.4",
     "python-multipart>=0.0.9",
     "pillow>=10.1",
+    # RAR, 7z and tar imports; needs the libarchive library (in the Docker image)
+    "libarchive-c>=5.1",
 ]
 
 [project.urls]

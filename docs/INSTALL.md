@@ -96,8 +96,8 @@ Before making Playshelf reachable from outside your home network, read the
 ## 5. Add games
 
 Copy each game into its own folder under `data/games/` (or `DATA_ROOT/games/`),
-then click **Rescan folder** in the dashboard. Alternatively upload ZIP files
-in the dashboard or drop them into `data/inbox/`. See
+then click **Rescan folder** in the dashboard. Alternatively upload archives
+(ZIP, RAR, 7z, tar) in the dashboard or drop them into `data/inbox/`. See
 [Moving an existing library](#8-moving-an-existing-library) for a larger
 collection.
 
@@ -176,7 +176,7 @@ scp -r "$env:USERPROFILE\Documents\Games\*" <user>@<server>:/opt/playshelf/data/
 ```
 
 If you set up the [SMB share](DEPLOYMENT.md#inbox-over-smb-optional), you can
-also zip games and drop the archives into the inbox share instead.
+also pack games as archives and drop them into the inbox share instead.
 
 Copy as the user set in `PUID`/`PGID`, so the files belong to the account
 Playshelf runs as. Then click **Rescan folder** in the dashboard and confirm
@@ -203,7 +203,7 @@ HTTPS access for the check.
 |---|---|
 | Page does not load | `docker compose ps`: is the container running and `healthy`? Is the port free (`ss -tlnp \| grep 8080`)? |
 | Container keeps restarting | `docker compose logs --tail 50`; usually the data folders are not writable for `PUID:PGID` (see [file permissions](DEPLOYMENT.md#user-and-file-permissions)) |
-| A ZIP in the inbox is not imported | Is it in `inbox/failed/` (reason in the `.txt` next to it)? Otherwise check `docker compose logs playshelf` and that `inbox/` is writable for `PUID:PGID` |
+| An archive in the inbox is not imported | Is it in `inbox/failed/` (reason in the `.txt` next to it)? Otherwise check `docker compose logs playshelf` and that `inbox/` is writable for `PUID:PGID` |
 | Every update check fails | Outgoing internet access from the container: `docker compose exec playshelf python -c "import urllib.request; print(urllib.request.urlopen('https://itch.io', timeout=10).status)"` |
 | Games are missing | Are they direct subfolders of `games/`? Click **Rescan folder** |
 | Upload fails with error 413 behind a proxy | The proxy limits the request size; see [reverse proxy](DEPLOYMENT.md#behind-a-reverse-proxy) |

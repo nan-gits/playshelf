@@ -7,9 +7,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app import imports, scanner
+from app import importer, imports, scanner
 from app.config import Settings
 from app.main import create_app
+from tests.test_importer import ARCHIVES, needs_libarchive
 
 
 def write(path: Path, content: str = "") -> None:
@@ -71,7 +72,7 @@ def test_upload_creates_pending_import_with_update_suggestion(
     assert (settings.imports_dir / imp["staging"] / imp["folder"]).is_dir()
     assert api.get("/api/imports").json() == [imp]
     # The uploaded archive itself is not kept
-    assert not list(settings.imports_dir.glob("*.zip"))
+    assert not list(settings.imports_dir.glob("*.upload"))
 
 
 def test_suggestion_by_title_only(api: TestClient) -> None:
@@ -115,6 +116,18 @@ def test_upload_size_limit(settings: Settings) -> None:
     assert list(settings.imports_dir.iterdir()) == []
 
 
+@needs_libarchive
+def test_upload_7z(api: TestClient, settings: Settings) -> None:
+    content = (ARCHIVES / "game.7z").read_bytes()
+    response = api.post("/api/imports", params={"filename": "Quiet Valley.7z"}, content=content)
+    assert response.status_code == 201, response.text
+    assert (response.json()["folder"], response.json()["filename"]) == (
+        "Quiet Valley 0.3",
+        "Quiet Valley",
+    )
+    assert [p.name for p in settings.imports_dir.iterdir() if p.is_file()] == []
+
+
 def test_import_limits(settings: Settings) -> None:
     settings.max_upload_mb = 16
     settings.max_extracted_mb = 32
@@ -122,7 +135,9 @@ def test_import_limits(settings: Settings) -> None:
         assert client.get("/api/imports/limits").json() == {
             "max_upload_bytes": 16 * 1024 * 1024,
             "max_extracted_bytes": 32 * 1024 * 1024,
+            "formats": importer.supported_suffixes(),
         }
+        assert ".zip" in client.get("/api/imports/limits").json()["formats"]
 
 
 def test_confirm_as_new_game(api: TestClient, settings: Settings) -> None:
@@ -473,3 +488,106 @@ def test_update_refreshes_automatic_image(api: TestClient) -> None:
     assert before["image"] is None
     after = apply_update(api, LANTERNS_UPDATE, before["id"], "1.5.0").json()
     assert (after["image_mode"], after["image"]) == ("auto", "media/new.png")
+
+
+# Deleting games and backups
+
+
+def test_delete_game_removes_folder_and_backups(api: TestClient, settings: Settings) -> None:
+    lanterns = prepare_lanterns(api)
+    apply_update(api, LANTERNS_UPDATE, lanterns["id"], "1.5.0")
+    assert (settings.backups_dir / "Paper Lanterns" / "1.4.4").is_dir()
+    assert api.delete(f"/api/games/{lanterns['id']}").status_code == 204
+    assert api.get(f"/api/games/{lanterns['id']}").status_code == 404
+    assert sorted(p.name for p in settings.games_dir.iterdir()) == ["CK"]
+    assert not (settings.backups_dir / "Paper Lanterns").exists()
+    assert api.get("/api/backups").json()["backups"] == []
+    assert api.post("/api/scan").json() == {"added": 0, "found": 1, "missing": 0}
+
+
+def test_delete_refuses_a_linked_folder(api: TestClient, settings: Settings) -> None:
+    elsewhere = settings.games_dir.parent / "elsewhere"
+    write(elsewhere / "index.html", "<title>Linked</title>")
+    (settings.games_dir / "Linked").symlink_to(elsewhere, target_is_directory=True)
+    api.post("/api/scan")
+    linked = game(api, "Linked")
+    response = api.delete(f"/api/games/{linked['id']}")
+    assert response.status_code == 409
+    assert (elsewhere / "index.html").exists()
+    assert api.get(f"/api/games/{linked['id']}").status_code == 200
+
+
+def test_remove_without_other_users_deletes(api: TestClient, settings: Settings) -> None:
+    kettle = game(api, "CK")
+    assert api.post(f"/api/games/{kettle['id']}/remove").json() == {"deleted": True}
+    assert not (settings.games_dir / "CK").exists()
+
+
+def test_failed_delete_keeps_the_game(
+    api: TestClient, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def boom(*_args):
+        raise OSError("database is locked")
+
+    kettle = game(api, "CK")
+    monkeypatch.setattr("app.db.Database.delete_game", boom)
+    with pytest.raises(OSError):
+        api.delete(f"/api/games/{kettle['id']}")
+    assert (settings.games_dir / "CK" / "index.html").is_file()
+    assert not list(settings.games_dir.glob(".deleted-*"))
+
+
+def test_cleanup_removes_interrupted_deletes(settings: Settings) -> None:
+    write(settings.games_dir / ".deleted-abc" / "index.html", "x")
+    write(settings.games_dir / "G" / "index.html", "<title>G</title>")
+    with TestClient(create_app(settings)):
+        pass
+    assert sorted(p.name for p in settings.games_dir.iterdir()) == ["G"]
+
+
+def test_backups_list_and_delete(api: TestClient, settings: Settings) -> None:
+    lanterns = prepare_lanterns(api)
+    apply_update(api, LANTERNS_UPDATE, lanterns["id"], "1.5.0")
+    listed = api.get("/api/backups").json()
+    assert listed["orphans"] == []
+    [backup] = listed["backups"]
+    assert (backup["title"], backup["version"], backup["path"]) == (
+        "Paper Lanterns",
+        "1.4.4",
+        "Paper Lanterns/1.4.4",
+    )
+    assert backup["size"] > 0
+    history = api.get(f"/api/games/{lanterns['id']}/history").json()
+    assert history["backups"][0]["size"] == backup["size"]
+
+    assert api.delete(f"/api/backups/{backup['id']}").status_code == 204
+    assert api.get("/api/backups").json()["backups"] == []
+    assert not (settings.backups_dir / "Paper Lanterns").exists()
+    assert api.delete(f"/api/backups/{backup['id']}").status_code == 404
+    # The game itself is untouched
+    assert (settings.games_dir / "Paper Lanterns 1.5.0" / "Paper Lanterns.html").is_file()
+
+
+def test_orphan_backups(api: TestClient, settings: Settings) -> None:
+    write(settings.backups_dir / "Old Game" / "0.9" / "index.html", "x" * 2000)
+    write(settings.backups_dir / "Old Game" / "1.0" / "index.html", "x")
+    orphans = api.get("/api/backups").json()["orphans"]
+    assert [(o["path"], o["size"]) for o in orphans] == [
+        ("Old Game/0.9", 2000),
+        ("Old Game/1.0", 1),
+    ]
+    for path in ["../games/CK", "Old Game", "Old Game/../../games/CK", "Nope/1"]:
+        assert api.delete("/api/backups", params={"path": path}).status_code == 404, path
+    assert (settings.games_dir / "CK" / "index.html").is_file()
+    assert api.delete("/api/backups", params={"path": "Old Game/0.9"}).status_code == 204
+    assert api.delete("/api/backups", params={"path": "Old Game/1.0"}).status_code == 204
+    assert not (settings.backups_dir / "Old Game").exists()
+    assert api.get("/api/backups").json()["orphans"] == []
+
+
+def test_backup_of_a_game_in_use_is_no_orphan(api: TestClient, settings: Settings) -> None:
+    lanterns = prepare_lanterns(api)
+    apply_update(api, LANTERNS_UPDATE, lanterns["id"], "1.5.0")
+    response = api.delete("/api/backups", params={"path": "Paper Lanterns/1.4.4"})
+    assert response.status_code == 404
+    assert (settings.backups_dir / "Paper Lanterns" / "1.4.4").is_dir()

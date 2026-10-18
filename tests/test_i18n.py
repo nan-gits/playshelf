@@ -52,7 +52,7 @@ def test_english_table_has_no_german() -> None:
 
 def test_template_keys_exist() -> None:
     keys = set(re.findall(r"\{\{\s*([\w.]+)\s*\}\}", TEMPLATE.read_text(encoding="utf-8")))
-    assert keys - {"lang", "messages"} <= set(i18n.messages("en"))
+    assert keys - {"lang", "messages", "version", "project_url"} <= set(i18n.messages("en"))
 
 
 def test_keys_used_in_app_js_exist() -> None:

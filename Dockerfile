@@ -8,6 +8,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# libarchive reads RAR, 7z and tar archives for imports
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libarchive13t64 \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /opt/app
 COPY pyproject.toml README.md ./
 COPY app ./app

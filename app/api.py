@@ -9,7 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from app import images, imports, scanner, stats, updates
+from app import images, importer, imports, scanner, stats, updates
 from app.accounts import Admin, User
 from app.config import Settings
 from app.db import (
@@ -204,17 +204,25 @@ def set_owners(game_id: int, body: OwnersUpdate, db: DB, admin: Admin) -> dict[s
 
 @router.delete("/games/{game_id}", status_code=204)
 def delete_game(game_id: int, db: DB, settings: Config, admin: Admin) -> Response:
-    """Removes only the entry of a game whose folder is missing. Files are never touched.
-    Admins only, because the entry belongs to everyone who sees the game."""
+    """Deletes a game for everyone: folder, backups, entry and all play data.
+    Admins only; other accounts remove a game from their own library instead."""
     game = _game_or_404(db, game_id, admin)
-    if not game["missing"]:
-        raise HTTPException(
-            409,
-            "Only entries whose folder is missing can be removed. Files are never deleted.",
-        )
-    db.delete_game(game_id)
-    images.forget(settings, game_id)
+    try:
+        imports.delete_game(settings, db, game)
+    except imports.ImportConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
     return Response(status_code=204)
+
+
+@router.post("/games/{game_id}/remove")
+def remove_from_library(game_id: int, db: DB, settings: Config, user: User) -> dict[str, bool]:
+    """Takes the game out of the signed-in account's library. Its files are deleted only
+    if no other account uses the game; `deleted` says whether that happened."""
+    game = _game_or_404(db, game_id, user)
+    try:
+        return {"deleted": imports.remove_from_library(settings, db, game, user)}
+    except imports.ImportConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 # Cover images
@@ -319,7 +327,7 @@ def list_statuses() -> list[str]:
     return STATUSES
 
 
-# ZIP import
+# Archive import
 
 
 class ImportConfirm(GameUpdate):
@@ -344,7 +352,7 @@ async def upload_import(
     user: User,
     filename: Annotated[str, Query(min_length=1, max_length=255)] = "Upload.zip",
 ) -> dict[str, Any]:
-    """Accepts a ZIP as raw request body (not a form), extracts and checks it.
+    """Accepts an archive as raw request body (not a form), extracts and checks it.
 
     This lets the browser send the upload with progress, and large archives go
     straight into the data folder instead of a temporary system folder.
@@ -359,7 +367,7 @@ async def upload_import(
         raise too_big
 
     settings.imports_dir.mkdir(parents=True, exist_ok=True)
-    archive = settings.imports_dir / f"{imports.new_token()}.zip"
+    archive = settings.imports_dir / f"{imports.new_token()}.upload"
     try:
         received = 0
         with archive.open("wb") as file:
@@ -379,12 +387,13 @@ async def upload_import(
 
 
 @router.get("/imports/limits")
-def import_limits(settings: Config, _: User) -> dict[str, int]:
-    """Size limits for imports, so the browser can refuse a file that is too large
+def import_limits(settings: Config, _: User) -> dict[str, Any]:
+    """Size limits and archive formats for imports, so the browser can refuse a file
     before uploading it."""
     return {
         "max_upload_bytes": settings.max_upload_mb * MB,
         "max_extracted_bytes": settings.max_extracted_mb * MB,
+        "formats": importer.supported_suffixes(),
     }
 
 
@@ -434,7 +443,7 @@ def game_history(game_id: int, db: DB, user: User) -> dict[str, list[dict[str, A
     """Version history and existing backups, newest first."""
     _game_or_404(db, game_id, user)
     backups = [
-        {key: b[key] for key in ("id", "version", "folder", "created_at")}
+        {key: b[key] for key in ("id", "version", "folder", "size", "created_at")}
         for b in db.list_backups(game_id)
     ]
     return {"history": db.list_history(game_id), "backups": backups}
@@ -456,6 +465,96 @@ def restore_game(
     except imports.ImportConflict as exc:
         raise HTTPException(409, str(exc)) from exc
     return _view(db, user, game_id)
+
+
+# Backups of replaced versions
+
+
+@router.get("/backups")
+def list_backups(db: DB, settings: Config, user: User) -> dict[str, Any]:
+    """Backups of the games the user sees, largest first, and KEEP_BACKUPS as `keep`.
+    For admins also `orphans`: backup folders that no game refers to any more."""
+    games = {g["id"]: g for g in db.list_games(user)}
+    backups = [
+        {
+            **{key: b[key] for key in ("id", "game_id", "version", "path", "size", "created_at")},
+            "title": games[b["game_id"]]["title"],
+        }
+        for b in db.list_all_backups()
+        if b["game_id"] in games
+    ]
+    backups.sort(key=lambda b: (-(b["size"] or 0), b["title"].lower(), b["created_at"]))
+    result: dict[str, Any] = {"backups": backups, "keep": settings.keep_backups}
+    if user["role"] == ROLE_ADMIN:
+        result["orphans"] = imports.orphan_backups(settings, db)
+    return result
+
+
+@router.delete("/backups/{backup_id}", status_code=204)
+def delete_backup(backup_id: int, db: DB, settings: Config, user: User) -> Response:
+    """Deletes a backup of a game the user sees."""
+    backup = db.get_backup(backup_id)
+    if backup is None or db.get_game(backup["game_id"], user) is None:
+        raise HTTPException(404, "Backup not found.")
+    imports.delete_backup(settings, db, backup)
+    return Response(status_code=204)
+
+
+@router.delete("/backups", status_code=204)
+def delete_orphan_backup(
+    db: DB,
+    settings: Config,
+    _: Admin,
+    path: Annotated[str, Query(min_length=3, max_length=600)],
+) -> Response:
+    """Deletes a backup folder that no game refers to (admins only); `path` is
+    "<game>/<version>" as listed under `orphans`."""
+    try:
+        imports.delete_orphan_backup(settings, db, path)
+    except imports.ImportConflict as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return Response(status_code=204)
+
+
+# Library overview (admins only)
+
+
+@router.get("/overview")
+def overview(db: DB, _: Admin) -> dict[str, Any]:
+    """Which account has which games, with each account's play data, and the games
+    nobody owns (only admins see those)."""
+    games = db.list_games()
+    owners = db.owners()
+    play = db.play_data()
+
+    def entry(game: dict[str, Any], user_id: int | None = None) -> dict[str, Any]:
+        data = play.get((user_id, game["id"]), {}) if user_id is not None else {}
+        return {
+            "id": game["id"],
+            "title": game["title"],
+            "version": game["version"],
+            "size": game["size"],
+            "missing": game["missing"],
+            "last_played": data.get("last_played"),
+            "play_count": data.get("play_count", 0),
+            "favorite": bool(data.get("favorite")),
+            "status": data.get("status"),
+        }
+
+    accounts = []
+    for account in db.list_users():
+        owned = [entry(g, account["id"]) for g in games if account["id"] in owners.get(g["id"], [])]
+        accounts.append(
+            {
+                "id": account["id"],
+                "username": account["username"],
+                "role": account["role"],
+                "games": owned,
+                "size": sum(g["size"] or 0 for g in owned),
+            }
+        )
+    unowned = [entry(g) for g in games if not owners.get(g["id"])]
+    return {"users": accounts, "unowned": unowned}
 
 
 @router.delete("/imports/{import_id}", status_code=204)

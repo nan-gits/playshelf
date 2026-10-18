@@ -3,20 +3,21 @@
 A self-hosted library for the HTML games you keep on your own disk. Playshelf
 scans a folder of downloaded browser games and shows them as tiles: start a
 game with one click, keep track of versions and update links, see when you last
-played, and import new games and updates from ZIP files.
+played, and import new games and updates from ZIP, RAR, 7z or tar archives.
 
 - **Library:** every subfolder is a game; the start file, title, version hint
   and cover image are detected automatically.
 - **Versions:** the installed version is recorded per game, with a version
   history. Updates replace the game folder safely and keep the old version as a
   backup you can restore.
-- **ZIP import:** upload archives in the browser or drop them into an inbox
-  folder (for example a network share). Every archive is checked before it
-  touches the library.
+- **Archive import:** upload ZIP, RAR, 7z or tar archives in the browser or
+  drop them into an inbox folder (for example a network share). Every archive
+  is checked before it touches the library.
 - **Update check:** for games with an update link (itch.io, Patreon and,
   optionally, F95Zone), Playshelf looks up the newest version online and marks
   games with an update.
-- **Statistics:** most played, not played for a long time, disk usage.
+- **Statistics:** most played, not played for a long time, disk usage, and a
+  list of all backups with their size.
 - **User accounts:** everyone in the household signs in with their own
   account and sees their own games; last played, favourites, status and
   statistics are kept per person. Admins see all games and can share them.
@@ -65,6 +66,11 @@ pip install .
 playshelf                        # or: python -m app
 ```
 
+RAR, 7z and tar imports need the libarchive library (in the Docker image
+already): `sudo apt install libarchive13t64` on Debian 13 and Ubuntu 24.04
+(`libarchive13` on older releases), `brew install libarchive` on macOS. Without
+it, only ZIP archives are imported.
+
 Then open <http://127.0.0.1:8000>. On the first start Playshelf asks you to
 create the admin account. Games go into the `games/` folder next to where you
 started Playshelf, one subfolder per game.
@@ -83,14 +89,14 @@ cp .env.example .env
 |---|---|---|
 | `GAMES_DIR` | `games` | Game library, one subfolder per game |
 | `DATA_DIR` | `data` | Database, backups and thumbnails |
-| `INBOX_DIR` | `inbox` | Inbox folder for new ZIP files |
+| `INBOX_DIR` | `inbox` | Inbox folder for new archives |
 | `HOST` | `127.0.0.1` | Address the web server binds to |
 | `PORT` | `8000` | Web server port |
-| `MAX_UPLOAD_MB` | `4096` | Maximum size of a ZIP archive in MB |
+| `MAX_UPLOAD_MB` | `4096` | Maximum size of an uploaded archive in MB |
 | `MAX_EXTRACTED_MB` | `8192` | Maximum size of an archive's extracted content in MB |
 | `KEEP_BACKUPS` | `3` | Old versions kept per game after updates |
 | `INBOX_POLL_SECONDS` | `5` | How often the inbox folder is checked, `0` = off |
-| `INBOX_SETTLE_SECONDS` | `10` | How long a ZIP file must stay unchanged before it is imported |
+| `INBOX_SETTLE_SECONDS` | `10` | How long an archive must stay unchanged before it is imported |
 | `UPDATE_CHECK_HOURS` | `24` | Interval of the online update check in hours, `0` = by hand only |
 | `ADULT_SOURCES` | `false` | Offer the adult game sites F95Zone and TFGames as sources |
 | `UI_LANGUAGE` | `auto` | Interface language: `en`, `de`, or `auto` for the browser's language (English if it is neither) |
@@ -119,14 +125,19 @@ with **Rescan folder**:
   there are several), otherwise the largest image in the game folder. Another
   image from the folder, no image, or an uploaded image can be chosen in the
   edit dialog. Tiles show scaled-down copies from `DATA_DIR/thumbs`.
-- **Missing folders** are greyed out and their entries can be removed.
-  Playshelf never deletes game folders.
+- **Missing folders** are greyed out and admins can remove their entries.
 - **Disk usage** of every game folder is computed when scanning.
 
 **Play** opens the game in a new tab and records the start. Browsers keep game
 saves per address: saves made while playing from `file:///…` do not show up
 under Playshelf's address. Most games can export and import saves (in SugarCube
 games: *Saves* → *Save to Disk* / *Load from Disk*).
+
+**Deleting a game** is in the edit dialog. Admins delete a game for everyone:
+its folder, its backups and every account's play data. Other accounts remove
+a game from their own library; its files are only deleted when no other account
+owns the game or has played it, marked it or given it a status. Playshelf only
+deletes folders inside `GAMES_DIR` and `DATA_DIR/backups`, never links.
 
 Each game can have a **status** (playing, completed, dropped, waiting for an
 update) and be marked as a **favourite**. **Statistics** shows the most played
@@ -139,6 +150,8 @@ With `AUTH=accounts` (the default) everyone signs in with a user name and
 password. On the first start every page leads to a setup page that creates the
 first **admin** account. Admins manage accounts under **Accounts** (add,
 rename, set a new password, change the role, remove) and see every game.
+**Overview** shows which account has which games, with that account's last
+start and number of starts, and the games nobody owns yet.
 **Users** see the games they own and the games shared with them.
 
 - A game imported by someone belongs to them. Games found by **Rescan
@@ -168,14 +181,18 @@ longer read and can be removed.
 
 ### Importing new games and updates
 
-Use **Import ZIP**, drag ZIP files onto the page, or drop them into the inbox
-folder `INBOX_DIR`. Every archive is checked and extracted into a staging
-folder under `DATA_DIR/imports`:
+Use **Import game**, drag archives onto the page, or drop them into the inbox
+folder `INBOX_DIR`. Supported are `.zip`, `.rar` (RAR 4 and 5), `.7z`, `.tar`,
+`.tar.gz`/`.tgz`, `.tar.bz2`/`.tbz2` and `.tar.xz`/`.txz`; everything but ZIP
+needs libarchive (see [Installation](#installation)). Every archive is checked
+and extracted into a staging folder under `DATA_DIR/imports`:
 
 - Archives are rejected if they are damaged or password protected, contain an
-  `.exe`, have no HTML file, contain paths outside the game folder or symbolic
-  links, or are larger than `MAX_UPLOAD_MB` (extracted: `MAX_EXTRACTED_MB`).
-  The message gives the reason.
+  `.exe`, have no HTML file, contain paths outside the game folder, links or
+  special files, or are larger than `MAX_UPLOAD_MB` (extracted:
+  `MAX_EXTRACTED_MB`). The message gives the reason.
+- Archives split into several parts (`.part1.rar`, `.part2.rar`, `.001` …) are
+  not supported; extract them and pack the game as one archive.
 - Wrapper folders, `__MACOSX` and `._` files are removed and the folder name is
   cleaned up.
 
@@ -188,24 +205,28 @@ On an **update**, the previous version is moved to
 `DATA_DIR/backups/<game>/<version>` before the new one is put in place. If
 anything fails on the way, the old version stays playable. Title, source,
 update link, notes and play statistics are kept. The edit dialog shows the
-version history and the saved versions; **Restore** brings one back and saves
-the current version in turn. At most `KEEP_BACKUPS` backups are kept per game.
+version history and the saved versions with their size; **Restore** brings one
+back and saves the current version in turn, **Delete** removes it. At most
+`KEEP_BACKUPS` backups are kept per game. **Backups** in the toolbar lists the
+backups of all your games, largest first; admins also see backup folders that
+no game refers to any more (for example from entries removed with older
+versions) and can delete them there.
 
 Archives dropped into the inbox are imported once they have not changed for
 `INBOX_SETTLE_SECONDS`, so files still being copied are left alone. Afterwards
-the ZIP file is moved to `processed/`, or to `failed/` next to a `.txt` file
-with the reason. Only ZIP files are imported: RAR, 7z and tar archives go
-straight to `failed/` with a note.
+the archive is moved to `processed/`, or to `failed/` next to a `.txt` file
+with the reason. Files of a kind that is not imported (a lone `.gz`, parts of a
+split archive, RAR or 7z without libarchive) go to `failed/` with a note too.
 
 Each account has its own inbox subfolder, created automatically:
 
 ```text
 INBOX_DIR/
-├── anna/            ZIPs here become Anna's pending imports
+├── anna/            archives here become Anna's pending imports
 │   ├── processed/
 │   └── failed/
 ├── ben/
-├── processed/       for ZIPs placed directly in INBOX_DIR,
+├── processed/       for archives placed directly in INBOX_DIR,
 └── failed/          which belong to the first admin
 ```
 
@@ -239,13 +260,13 @@ understands common spellings (`0.11` = `0_11` = `v0.11`, `1.0` = `1.0.0`,
 
 Pages that ask for a browser check (bot protection) are shown as "check by hand" with a
 link to the page. Bot protection is never circumvented, and Playshelf never downloads games
-itself; updates always come in as ZIP files.
+itself; updates always come in as archives.
 
 ### API
 
 The web UI uses a JSON API under `/api`; interactive documentation is served at
 `/docs`. Invalid input is answered with `{"detail": [{"field": ..., "message": ...}]}`;
-other errors (not found, rejected ZIP file) with `{"detail": "message"}`.
+other errors (not found, rejected archive) with `{"detail": "message"}`.
 
 | Method and path | Purpose |
 |---|---|
@@ -253,7 +274,8 @@ other errors (not found, rejected ZIP file) with `{"detail": "message"}`.
 | `GET /api/games/{id}` | One game |
 | `PATCH /api/games/{id}` | Change title, version, source, update link, notes, start file, status, favourite (status and favourite are per account and also work without a version) |
 | `PUT /api/games/{id}/owners` | Admins: set the accounts that see the game, `{"user_ids": […]}` |
-| `DELETE /api/games/{id}` | Admins: remove an entry (only if its folder is missing) |
+| `DELETE /api/games/{id}` | Admins: delete a game for everyone, with its folder and backups |
+| `POST /api/games/{id}/remove` | Remove a game from the own library; returns `{"deleted": …}`, true if no other account used it and its files were deleted |
 | `GET /api/games/{id}/html-files` | Possible start files |
 | `POST /api/scan` | Admins: rescan the games folder; returns new, found and missing counts |
 | `GET /api/sources` | Sources offered for the update link |
@@ -264,10 +286,14 @@ other errors (not found, rejected ZIP file) with `{"detail": "message"}`.
 | `PUT /api/games/{id}/image` | Choose the cover image: `{"mode": "auto"}`, `{"mode": "none"}` or `{"mode": "file", "path": …}` |
 | `POST /api/games/{id}/image` | Upload a custom image as raw request body (max. 25 MB) |
 | `GET /api/games/{id}/history` | Version history and saved versions |
+| `GET /api/backups` | Backups of the account's games, largest first, and `keep` (`KEEP_BACKUPS`); for admins also `orphans`, backup folders without a game |
+| `DELETE /api/backups/{id}` | Delete a backup |
+| `DELETE /api/backups?path=…` | Admins: delete a backup folder without a game (`path` as listed under `orphans`) |
+| `GET /api/overview` | Admins: the games of each account with its play data, and the games without owner |
 | `POST /api/games/{id}/restore` | Restore a backup (`{"backup_id": …}`; the newest one if omitted) |
-| `POST /api/imports?filename=…` | Upload a ZIP as raw request body, check and extract it |
+| `POST /api/imports?filename=…` | Upload an archive as raw request body, check and extract it |
 | `GET /api/imports` | The account's pending imports with suggestion |
-| `GET /api/imports/limits` | Size limits for imports in bytes (`MAX_UPLOAD_MB`, `MAX_EXTRACTED_MB`) |
+| `GET /api/imports/limits` | Size limits for imports in bytes (`MAX_UPLOAD_MB`, `MAX_EXTRACTED_MB`) and the supported archive endings (`formats`) |
 | `POST /api/imports/{id}/confirm` | Install: `version` (required), `game_id` for an update, otherwise a new game; optional `entry`, for new games also `title`, `source`, `update_url`, `notes` |
 | `DELETE /api/imports/{id}` | Discard an import |
 | `POST /api/games/{id}/check-update` | Check one game online right away |
@@ -303,8 +329,8 @@ app/              Application code (FastAPI)
   config.py       Settings
   db.py           SQLite database with migrations
   scanner.py      Scanning the games folder, detecting the start file
-  importer.py     Checking and extracting ZIP files safely
-  imports.py      Pending imports, updates with backup, restore
+  importer.py     Checking and extracting archives safely
+  imports.py      Pending imports, updates with backup, restore, deleting
   inbox.py        Watching the inbox folder
   images.py       Cover images: choice, upload, scaling
   stats.py        Statistics

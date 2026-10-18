@@ -59,6 +59,9 @@ h1 { margin: 0; font-size: 24px; }
 .sprite { display: none; }
 .icon { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 button .icon + span { margin-left: 6px; }
+.icon.filled { fill: currentColor; stroke: none; width: 18px; height: 18px; }
+.button.small { min-height: 34px; padding: 4px 10px; font-size: 14px; }
+.button.icon-only { padding: 4px 8px; }
 .title-actions form { margin: 0; }
 .login { max-width: 22rem; margin: 15vh auto 0; padding: 0 16px; }
 .login form { display: grid; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
@@ -156,7 +159,7 @@ main {
 .notes:empty { display: none; }
 .card .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 6px; }
 .card .actions > * { padding: 5px 12px; font-size: 14px; min-height: 36px; }
-.empty { grid-column: 1 / -1; text-align: center; color: var(--muted); padding: 40px 0; }
+p.empty { grid-column: 1 / -1; text-align: center; color: var(--muted); padding: 40px 0; }
 
 dialog {
   border: 1px solid var(--border);
@@ -178,7 +181,9 @@ dialog label.check { flex-direction: row; font-size: 15px; color: var(--text); }
 .hint button { padding: 1px 8px; font-size: 13px; min-height: 28px; }
 .error { color: var(--danger); margin: 0; font-size: 13px; white-space: pre-line; }
 .error:empty { display: none; }
-dialog .actions { display: flex; justify-content: flex-end; gap: 8px; }
+dialog .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+dialog .actions .start { margin-right: auto; }
+dialog .actions .end { display: flex; gap: 8px; margin-left: auto; }
 
 /* Upload and pending imports */
 .uploads { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -253,7 +258,8 @@ dialog.wide { width: min(640px, calc(100vw - 24px)); }
 .history ul { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
 .history li { margin: 2px 0; }
 #backup-list { list-style: none; padding: 0; }
-#backup-list li { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+#backup-list li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 8px; }
+#backup-list .buttons { display: flex; gap: 6px; }
 .history h3[hidden] { display: none; }
 
 @media (max-width: 560px) {
@@ -284,3 +290,15 @@ dialog h3 { margin: 8px 0 0; font-size: 16px; }
 .user-list select { width: auto; }
 .user-form-fields { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
 .user-form-fields label { flex: 1 1 9rem; }
+
+/* Backups and library overview */
+.item-list { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+.item-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.item-list .name { flex: 1 1 12rem; overflow-wrap: anywhere; }
+.item-list .value { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.scroll-list { max-height: 50vh; overflow-y: auto; padding-right: 4px; }
+.overview details { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+.overview details + details { margin-top: 8px; }
+.overview summary { cursor: pointer; overflow-wrap: anywhere; }
+.overview summary .muted { margin-left: 8px; font-size: 13px; }
+.overview details .item-list li:last-child { border-bottom: none; }

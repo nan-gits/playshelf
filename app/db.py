@@ -312,7 +312,8 @@ class Database:
         return self.get_game(game_id)
 
     def delete_game(self, game_id: int) -> bool:
-        """Removes the game and its history; backup folders on disk are kept."""
+        """Removes the game with its history, backup entries and everyone's play data.
+        Files are not touched here; see `imports.delete_game`."""
         with self.connect() as conn:
             cur = conn.execute("DELETE FROM games WHERE id = ?", (game_id,))
             conn.execute("DELETE FROM game_history WHERE game_id = ?", (game_id,))
@@ -359,6 +360,32 @@ class Database:
             for row in conn.execute("SELECT * FROM game_owners ORDER BY user_id"):
                 result.setdefault(row["game_id"], []).append(row["user_id"])
         return result
+
+    def remove_from_library(self, game_id: int, user_id: int) -> None:
+        """Takes a game out of one account's library: ownership and play data."""
+        with self.connect() as conn:
+            conn.execute(
+                "DELETE FROM game_owners WHERE game_id = ? AND user_id = ?", (game_id, user_id)
+            )
+            conn.execute(
+                "DELETE FROM play_data WHERE game_id = ? AND user_id = ?", (game_id, user_id)
+            )
+
+    def game_users(self, game_id: int) -> set[int]:
+        """Accounts that use a game: they own it or have play data for it."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT user_id FROM game_owners WHERE game_id = ?"
+                " UNION SELECT user_id FROM play_data WHERE game_id = ?",
+                (game_id, game_id),
+            ).fetchall()
+        return {row["user_id"] for row in rows}
+
+    def play_data(self) -> dict[tuple[int, int], dict[str, Any]]:
+        """Play data of every account, by (user id, game id)."""
+        with self.connect() as conn:
+            rows = conn.execute("SELECT * FROM play_data").fetchall()
+        return {(row["user_id"], row["game_id"]): dict(row) for row in rows}
 
     def set_owners(self, game_id: int, user_ids: Iterable[int]) -> None:
         with self.connect() as conn:

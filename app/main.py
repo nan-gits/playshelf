@@ -14,7 +14,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import __version__, i18n, imports, scanner, stats, updates, users
+from app import PROJECT_URL, __version__, i18n, imports, scanner, stats, updates, users
 from app.accounts import router as accounts_router
 from app.api import router as api_router
 from app.api import validation_error_handler
@@ -37,14 +37,16 @@ def render_dashboard(language: str) -> str:
     """The dashboard page in one language.
 
     `{{key}}` in the template becomes the text from the language table, `{{lang}}`
-    the language code and `{{messages}}` the whole table for app.js.
+    the language code, `{{version}}` and `{{project_url}}` the app's version and
+    repository, and `{{messages}}` the whole table for app.js.
     """
     table = i18n.messages(language)
+    fixed = {"lang": language, "version": __version__, "project_url": PROJECT_URL}
 
     def value(match: re.Match[str]) -> str:
         key = match.group(1)
-        if key == "lang":
-            return language
+        if key in fixed:
+            return escape(fixed[key])
         if key == "messages":
             data = json.dumps({"language": language, "messages": table}, ensure_ascii=False)
             return data.replace("<", "\\u003c")  # no "</script>" inside the script tag

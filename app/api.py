@@ -496,7 +496,10 @@ def delete_backup(backup_id: int, db: DB, settings: Config, user: User) -> Respo
     backup = db.get_backup(backup_id)
     if backup is None or db.get_game(backup["game_id"], user) is None:
         raise HTTPException(404, "Backup not found.")
-    imports.delete_backup(settings, db, backup)
+    try:
+        imports.delete_backup(settings, db, backup)
+    except imports.ImportConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
     return Response(status_code=204)
 
 
@@ -511,8 +514,10 @@ def delete_orphan_backup(
     "<game>/<version>" as listed under `orphans`."""
     try:
         imports.delete_orphan_backup(settings, db, path)
-    except imports.ImportConflict as exc:
+    except imports.BackupNotFound as exc:
         raise HTTPException(404, str(exc)) from exc
+    except imports.ImportConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
     return Response(status_code=204)
 
 

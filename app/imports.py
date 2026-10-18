@@ -8,6 +8,7 @@ Everything else that moves or deletes game and backup folders lives here as well
 """
 
 import contextlib
+import logging
 import os
 import shutil
 import threading
@@ -21,6 +22,8 @@ from app.config import Settings
 from app.db import ACTION_NEW, ACTION_RESTORE, ACTION_UPDATE, PLAY_FIELDS, Database
 
 MB = 1024 * 1024
+
+log = logging.getLogger(__name__)
 # A deleted game folder is renamed to this hidden name before its files are removed
 DELETED_PREFIX = ".deleted-"
 
@@ -30,6 +33,10 @@ library_lock = threading.Lock()
 
 class ImportConflict(RuntimeError):
     """The import cannot be installed in the current state."""
+
+
+class BackupNotFound(ImportConflict):
+    """There is no such backup folder without a game."""
 
 
 def new_token() -> str:
@@ -388,20 +395,30 @@ def _inside(base: Path, relative: str, depth: int) -> Path | None:
 
 
 def _remove_backup_folder(settings: Settings, relative: str) -> None:
+    """Deletes backups/<game>/<version>. Raises ImportConflict if that fails, for
+    example because the files belong to another system user."""
     path = _inside(settings.backups_dir, relative, depth=2)
     if path is None or not path.is_dir():
         return
-    shutil.rmtree(path, ignore_errors=True)
+    try:
+        shutil.rmtree(path)
+    except OSError as exc:
+        log.warning("Backup folder %s could not be deleted: %s", path, exc)
+        raise ImportConflict(
+            f"The backup folder {relative} could not be deleted completely:"
+            f" {exc.strerror or exc}. Check the file permissions in DATA_DIR/backups."
+        ) from exc
     # backups/<game>/ goes too once its last version is gone
     with contextlib.suppress(OSError):
         path.parent.rmdir()
 
 
 def delete_backup(settings: Settings, db: Database, backup: dict[str, Any]) -> None:
-    """Deletes a backup: its entry and its folder."""
+    """Deletes a backup: its folder, then its entry, so that a folder that cannot be
+    deleted keeps its entry and can be retried."""
     with library_lock:
-        db.delete_backup(backup["id"])
         _remove_backup_folder(settings, backup["path"])
+        db.delete_backup(backup["id"])
 
 
 def orphan_backups(settings: Settings, db: Database) -> list[dict[str, Any]]:
@@ -424,7 +441,7 @@ def delete_orphan_backup(settings: Settings, db: Database, path: str) -> None:
     """Deletes a backup folder that no game refers to. Raises ImportConflict otherwise."""
     with library_lock:
         if path not in {orphan["path"] for orphan in orphan_backups(settings, db)}:
-            raise ImportConflict("There is no such backup folder without a game.")
+            raise BackupNotFound("There is no such backup folder without a game.")
         _remove_backup_folder(settings, path)
 
 
@@ -455,9 +472,17 @@ def delete_game(settings: Settings, db: Database, game: dict[str, Any]) -> None:
             raise
         images.forget(settings, game["id"])
         for backup in backups:
-            _remove_backup_folder(settings, backup["path"])
+            # The game is gone already; a backup left behind shows up as a folder
+            # without a game under Backups, where an admin can delete it later
+            with contextlib.suppress(ImportConflict):
+                _remove_backup_folder(settings, backup["path"])
     if trash is not None:
-        shutil.rmtree(trash, ignore_errors=True)
+        try:
+            shutil.rmtree(trash)
+        except OSError as exc:
+            log.warning(
+                "%s could not be deleted completely, retried at the next start: %s", trash, exc
+            )
 
 
 def remove_from_library(

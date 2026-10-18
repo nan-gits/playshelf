@@ -591,3 +591,29 @@ def test_backup_of_a_game_in_use_is_no_orphan(api: TestClient, settings: Setting
     response = api.delete("/api/backups", params={"path": "Paper Lanterns/1.4.4"})
     assert response.status_code == 404
     assert (settings.backups_dir / "Paper Lanterns" / "1.4.4").is_dir()
+
+
+def test_backup_that_cannot_be_deleted_is_reported(
+    api: TestClient, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """For example files owned by another system user: no silent 204."""
+    lanterns = prepare_lanterns(api)
+    apply_update(api, LANTERNS_UPDATE, lanterns["id"], "1.5.0")
+    write(settings.backups_dir / "Old Game" / "0.9" / "index.html", "x")
+    [backup] = api.get("/api/backups").json()["backups"]
+
+    def denied(path, *args, **kwargs):
+        raise PermissionError(13, "Permission denied", str(path))
+
+    monkeypatch.setattr("app.imports.shutil.rmtree", denied)
+    response = api.delete(f"/api/backups/{backup['id']}")
+    assert response.status_code == 409
+    assert "Permission denied" in response.json()["detail"]
+    assert api.get("/api/backups").json()["backups"] == [backup]
+    response = api.delete("/api/backups", params={"path": "Old Game/0.9"})
+    assert response.status_code == 409
+    assert [o["path"] for o in api.get("/api/backups").json()["orphans"]] == ["Old Game/0.9"]
+    # Deleting the game still works; its backup stays behind as a folder without a game
+    assert api.delete(f"/api/games/{lanterns['id']}").status_code == 204
+    orphans = {o["path"] for o in api.get("/api/backups").json()["orphans"]}
+    assert orphans == {"Old Game/0.9", "Paper Lanterns/1.4.4"}

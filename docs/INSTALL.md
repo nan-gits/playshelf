@@ -207,3 +207,4 @@ HTTPS access for the check.
 | Every update check fails | Outgoing internet access from the container: `docker compose exec playshelf python -c "import urllib.request; print(urllib.request.urlopen('https://itch.io', timeout=10).status)"` |
 | Games are missing | Are they direct subfolders of `games/`? Click **Rescan folder** |
 | Upload fails with error 413 behind a proxy | The proxy limits the request size; see [reverse proxy](DEPLOYMENT.md#behind-a-reverse-proxy) |
+| Upload stops at the same percentage, or "reverse proxy rejected the file" | The proxy limits the request size; see [raising the limits](DEPLOYMENT.md#raising-the-limits-for-large-games) |

@@ -195,8 +195,14 @@ mind:
 
 - Serve it at the root of its own host name (`https://games.example.org/`).
   Running it under a sub-path (`/playshelf/`) is not supported.
-- Allow large request bodies, or ZIP uploads fail. The limit should be at
-  least `MAX_UPLOAD_MB`.
+- Allow large request bodies, or ZIP uploads fail. The proxy's limit must be
+  at least `MAX_UPLOAD_MB`. Proxies have their own default (nginx: 1 MB,
+  Nginx Proxy Manager: 2000 MB), and they reject a larger file with error 413,
+  often only after part of it was sent. Playshelf then reports that a reverse
+  proxy rejected the file, or that the upload stopped moving.
+- Turn off request buffering for uploads. Otherwise the proxy first writes
+  the whole archive to its own disk before passing it on, which needs that
+  much free space on the proxy and makes the progress bar misleading.
 - Allow long requests: importing a large archive can take a few minutes.
 - Pass `X-Forwarded-Proto`, so the login cookie is marked secure on HTTPS.
 - Once the proxy is in place, publish the port on localhost only, so the
@@ -234,8 +240,41 @@ games.example.org {
 }
 ```
 
-Nginx Proxy Manager: create a proxy host for `http://<host>:8080`, request a
-certificate, and add `client_max_body_size 4g;` under **Advanced**.
+### Nginx Proxy Manager
+
+1. Create a proxy host: domain name of your choice, scheme `http`, forward
+   host and port of Playshelf (for example `10.0.0.5` and `8080`).
+   **Websockets support** is not needed.
+2. On the **SSL** tab, request or pick a certificate and turn on
+   **Force SSL**.
+3. On the **Advanced** tab, paste this into **Custom Nginx Configuration**
+   and save:
+
+   ```nginx
+   client_max_body_size 16g;
+   proxy_request_buffering off;
+   proxy_read_timeout 600s;
+   proxy_send_timeout 600s;
+   ```
+
+   `16g` is an example: use at least your `MAX_UPLOAD_MB` (or `0` for no
+   limit in the proxy, leaving the limit to Playshelf). Nginx Proxy Manager
+   passes `X-Forwarded-Proto` by itself.
+
+### Raising the limits for large games
+
+The proxy is only one of three limits. For an archive of, say, 10 GB:
+
+| Limit | Where | Example |
+| --- | --- | --- |
+| Upload size | `MAX_UPLOAD_MB` in `.env` | `MAX_UPLOAD_MB=16384` |
+| Unpacked size | `MAX_EXTRACTED_MB` in `.env`; games compress little, but give it about twice the upload limit | `MAX_EXTRACTED_MB=32768` |
+| Request size in the proxy | `client_max_body_size` (see above) | `client_max_body_size 16g;` |
+
+After changing `.env`, run `docker compose up -d` so the container picks up
+the new values. The dashboard checks the file size against `MAX_UPLOAD_MB`
+before it uploads anything, so a file that is too large is refused at once.
+The unpacked size is only known after the upload.
 
 ## Security notes
 

@@ -115,6 +115,16 @@ def test_upload_size_limit(settings: Settings) -> None:
     assert list(settings.imports_dir.iterdir()) == []
 
 
+def test_import_limits(settings: Settings) -> None:
+    settings.max_upload_mb = 16
+    settings.max_extracted_mb = 32
+    with TestClient(create_app(settings)) as client:
+        assert client.get("/api/imports/limits").json() == {
+            "max_upload_bytes": 16 * 1024 * 1024,
+            "max_extracted_bytes": 32 * 1024 * 1024,
+        }
+
+
 def test_confirm_as_new_game(api: TestClient, settings: Settings) -> None:
     imp = upload(api, {"New 0.1/index.html": "<title>New</title>"}).json()
     response = api.post(

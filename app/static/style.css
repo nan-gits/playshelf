@@ -267,6 +267,7 @@ dialog.wide { width: min(640px, calc(100vw - 24px)); }
 .update-status { margin: 0; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
 .update-status.available a { color: var(--accent); font-weight: 600; }
 .update-status.failed { color: var(--danger); }
+.update-status.manual a { color: inherit; }
 .update-check { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
 .update-check .hint { margin: 0; }
 

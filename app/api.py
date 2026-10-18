@@ -378,6 +378,16 @@ async def upload_import(
     return next(p for p in imports.pending(settings, db, user) if p["id"] == imp["id"])
 
 
+@router.get("/imports/limits")
+def import_limits(settings: Config, _: User) -> dict[str, int]:
+    """Size limits for imports, so the browser can refuse a file that is too large
+    before uploading it."""
+    return {
+        "max_upload_bytes": settings.max_upload_mb * MB,
+        "max_extracted_bytes": settings.max_extracted_mb * MB,
+    }
+
+
 @router.get("/imports")
 def list_imports(db: DB, settings: Config, user: User) -> list[dict[str, Any]]:
     """The user's pending imports with a suggested match."""

@@ -33,7 +33,7 @@ class Patreon:
     domains = ("patreon.com",)
     adult = False
 
-    def latest(self, url: str, fetch: updates.Fetch) -> updates.Latest:
+    def latest(self, url: str, fetch: updates.Fetch, title: str | None = None) -> updates.Latest:
         campaign = self.campaign_id(url, fetch)
         query = urlencode(
             {

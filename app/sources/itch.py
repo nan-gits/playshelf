@@ -28,7 +28,7 @@ class ItchIo:
     domains = ("itch.io",)
     adult = False
 
-    def latest(self, url: str, fetch: updates.Fetch) -> updates.Latest:
+    def latest(self, url: str, fetch: updates.Fetch, title: str | None = None) -> updates.Latest:
         match = _GAME_URL.match(url)
         if not match:
             raise updates.CheckError(

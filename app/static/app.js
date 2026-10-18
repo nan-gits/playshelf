@@ -1,6 +1,6 @@
 "use strict";
 
-const state = { games: [], sources: [], statuses: [], imports: [], imageChanged: false, me: null, users: [] };
+const state = { games: [], sources: [], statuses: [], imports: [], imageChanged: false, me: null, users: [], limits: null };
 // Cover image in the open edit dialog: the game and the images to choose from
 const editorImage = { game: null, choices: null };
 const $ = (selector) => document.querySelector(selector);
@@ -874,6 +874,9 @@ async function discardImport(imp, form) {
 
 const uploadQueue = [];
 let uploading = false;
+// An upload that sends nothing for this long is given up; a reverse proxy that rejects a
+// large file often just stops reading it, and the progress bar would stand still forever
+const UPLOAD_STALL_MS = 60000;
 
 function uploadItem(file) {
   const item = document.createElement("li");
@@ -910,6 +913,11 @@ function queueUploads(files) {
       failUpload(view, t("upload.not_zip"));
       continue;
     }
+    const limit = state.limits?.max_upload_bytes;
+    if (limit && file.size > limit) {
+      failUpload(view, t("upload.too_large", { max: sizeText(limit) }));
+      continue;
+    }
     uploadQueue.push({ file, view });
   }
   if (!uploading) processUploads();
@@ -944,25 +952,48 @@ function uploadFile(file, view) {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `/api/imports?filename=${encodeURIComponent(file.name)}`);
     xhr.setRequestHeader("Content-Type", "application/zip");
+    let sent = false;
+    let stalled = false;
+    let watchdog;
+    const watch = () => {
+      clearTimeout(watchdog);
+      watchdog = setTimeout(() => {
+        stalled = true;
+        xhr.abort();
+      }, UPLOAD_STALL_MS);
+    };
     xhr.upload.addEventListener("progress", (event) => {
+      watch();
       if (!event.lengthComputable) return;
       view.progress.value = event.loaded / event.total;
       view.status.textContent = t("upload.progress", { percent: Math.floor((event.loaded / event.total) * 100) });
     });
     xhr.upload.addEventListener("load", () => {
+      sent = true;
+      clearTimeout(watchdog); // extracting a large archive may take minutes
       view.progress.removeAttribute("value"); // keeps moving without a fixed value
       view.status.textContent = t("upload.extracting");
     });
     xhr.addEventListener("load", () => {
-      let body = {};
+      clearTimeout(watchdog);
+      let body = null;
       try {
         body = JSON.parse(xhr.responseText);
       } catch {}
-      if (xhr.status >= 200 && xhr.status < 300) resolve(body);
-      else reject(new Error(errorText(body, xhr.status)));
+      if (xhr.status >= 200 && xhr.status < 300) resolve(body || {});
+      // Without a JSON answer the 413 comes from a reverse proxy, not from Playshelf
+      else if (xhr.status === 413 && !body?.detail) reject(new Error(t("upload.proxy_too_large")));
+      else reject(new Error(errorText(body || {}, xhr.status)));
     });
-    xhr.addEventListener("error", () => reject(new Error(t("upload.connection_lost"))));
+    xhr.addEventListener("error", () => {
+      clearTimeout(watchdog);
+      reject(new Error(t(sent ? "upload.connection_lost" : "upload.connection_lost_sending")));
+    });
+    xhr.addEventListener("abort", () => {
+      if (stalled) reject(new Error(t("upload.stalled")));
+    });
     view.status.textContent = t("upload.uploading");
+    watch();
     xhr.send(file);
   });
 }
@@ -1191,6 +1222,8 @@ async function init() {
     api("/api/statuses").catch(() => []),
     loadMe(),
   ]);
+  // Without the limits the server still refuses a file that is too large, only later
+  api("/api/imports/limits").then((limits) => (state.limits = limits), () => {});
   for (const source of state.sources) {
     $("#source-filter").append(new Option(sourceLabel(source), source));
     $("#edit-form").elements.source.append(new Option(sourceLabel(source), source));

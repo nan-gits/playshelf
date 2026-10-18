@@ -266,6 +266,7 @@ other errors (not found, rejected ZIP file) with `{"detail": "message"}`.
 | `POST /api/games/{id}/restore` | Restore a backup (`{"backup_id": …}`; the newest one if omitted) |
 | `POST /api/imports?filename=…` | Upload a ZIP as raw request body, check and extract it |
 | `GET /api/imports` | The account's pending imports with suggestion |
+| `GET /api/imports/limits` | Size limits for imports in bytes (`MAX_UPLOAD_MB`, `MAX_EXTRACTED_MB`) |
 | `POST /api/imports/{id}/confirm` | Install: `version` (required), `game_id` for an update, otherwise a new game; optional `entry`, for new games also `title`, `source`, `update_url`, `notes` |
 | `DELETE /api/imports/{id}` | Discard an import |
 | `POST /api/games/{id}/check-update` | Check one game online right away |

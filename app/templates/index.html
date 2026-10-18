@@ -15,13 +15,19 @@
 </script>
 </head>
 <body>
+<svg class="sprite" aria-hidden="true">
+  <symbol id="icon-auto" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></symbol>
+  <symbol id="icon-light" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="icon-dark" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></symbol>
+  <symbol id="icon-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+</svg>
 <header>
   <div class="title-row">
     <h1>Playshelf</h1>
     <div class="title-actions">
-      <button id="theme" type="button" class="secondary small" aria-label="{{theme.label}}"></button>
+      <button id="theme" type="button" class="secondary small" aria-label="{{theme.label}}"><svg class="icon" aria-hidden="true"><use href="#icon-auto"></use></svg><span id="theme-name"></span></button>
       <button id="users-button" type="button" class="secondary small" hidden>{{toolbar.users}}</button>
-      <button id="account" type="button" class="secondary small" title="{{account.button_title}}" hidden></button>
+      <button id="account" type="button" class="secondary small" title="{{account.button_title}}" hidden><svg class="icon" aria-hidden="true"><use href="#icon-user"></use></svg><span id="account-name"></span></button>
       <form id="logout" method="post" action="/logout" hidden><button type="submit" class="secondary small">{{logout}}</button></form>
     </div>
   </div>

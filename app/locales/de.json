@@ -1,9 +1,9 @@
 {
   "theme.label": "Farbschema wechseln",
   "theme.title": "Farbschema wechseln (Automatisch, Hell, Dunkel)",
-  "theme.auto": "◐ Auto",
-  "theme.light": "☀ Hell",
-  "theme.dark": "☾ Dunkel",
+  "theme.auto": "Auto",
+  "theme.light": "Hell",
+  "theme.dark": "Dunkel",
   "logout": "Abmelden",
   "search.label": "Suchen",
   "search.placeholder": "Suchen nach Name, Ordner, Notizen …",

@@ -53,9 +53,12 @@ body {
   color: var(--text);
 }
 header { padding: 20px 16px 8px; max-width: 1200px; margin: 0 auto; }
-.title-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
+.title-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
 h1 { margin: 0; font-size: 24px; }
-.title-actions { display: flex; gap: 8px; align-items: center; }
+.title-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; align-items: center; }
+.sprite { display: none; }
+.icon { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+button .icon + span { margin-left: 6px; }
 .title-actions form { margin: 0; }
 .login { max-width: 22rem; margin: 15vh auto 0; padding: 0 16px; }
 .login form { display: grid; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }

@@ -45,6 +45,12 @@ class ManualCheck(CheckError):
     """This source cannot be checked automatically (for example, login required)."""
 
 
+class BotProtection(ManualCheck):
+    """The page answered with a bot protection challenge (for example Cloudflare's
+    "Just a moment…"). It needs a real browser, and getting around it is out of the
+    question, so the game has to be checked by hand."""
+
+
 @dataclass
 class Latest:
     """What an adapter found online: version, date of change, or both."""
@@ -97,6 +103,11 @@ class Fetcher:
                 charset = response.headers.get_content_charset() or "utf-8"
                 return Response(response.geturl(), response.status, body.decode(charset, "replace"))
         except urllib.error.HTTPError as exc:
+            if exc.headers and exc.headers.get("cf-mitigated", "").lower() == "challenge":
+                raise BotProtection(
+                    f"{host} asks for a browser check (bot protection), so it cannot be"
+                    " checked automatically. Please check the page by hand."
+                ) from exc
             raise CheckError(_http_message(exc.code)) from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             reason = getattr(exc, "reason", exc)
@@ -125,7 +136,9 @@ class Adapter(Protocol):
     domains: tuple[str, ...]  # responsible for these domains and their subdomains
     adult: bool  # adult game site, only checked with ADULT_SOURCES=true
 
-    def latest(self, url: str, fetch: Fetch) -> Latest: ...
+    def latest(self, url: str, fetch: Fetch, title: str | None = None) -> Latest:
+        """`title` is the game's title in Playshelf, for sources that search by name."""
+        ...
 
 
 ADAPTERS: list[Adapter] = []
@@ -187,7 +200,9 @@ def compare_versions(a: str | None, b: str | None) -> int | None:
 # Checking and storing
 
 
-def check_url(url: str, fetch: Fetch, adult_sources: bool = False) -> Latest:
+def check_url(
+    url: str, fetch: Fetch, adult_sources: bool = False, title: str | None = None
+) -> Latest:
     adapter = adapter_for(url)
     if adapter is None:
         host = urlsplit(url).hostname or url
@@ -196,7 +211,7 @@ def check_url(url: str, fetch: Fetch, adult_sources: bool = False) -> Latest:
         raise ManualCheck(
             f"Automatic checks for {adapter.name} are turned off (ADULT_SOURCES=false)."
         )
-    return adapter.latest(url, fetch)
+    return adapter.latest(url, fetch, title)
 
 
 def check_game(
@@ -208,7 +223,7 @@ def check_game(
         raise CheckError("This game has no update link.")
     result: dict[str, Any] = {"url": url, "version": None, "date": None, "error": None}
     try:
-        latest = check_url(url, fetch, adult_sources)
+        latest = check_url(url, fetch, adult_sources, game.get("title"))
         result.update(status=STATUS_OK, version=latest.version, date=latest.date)
     except ManualCheck as exc:
         result.update(status=STATUS_MANUAL, error=str(exc))

@@ -233,11 +233,12 @@ understands common spellings (`0.11` = `0_11` = `v0.11`, `1.0` = `1.0.0`,
 |---|---|---|
 | itch.io | Game page `https://<name>.itch.io/<game>` | Version from itch.io's Wharf API, only if the developer uploads with *butler*; otherwise "check by hand" |
 | Patreon | Creator page `https://www.patreon.com/<name>` | First version (`v0.6`, `0.6.1`) in the titles of the ten newest posts; otherwise "check by hand" |
-| F95Zone | Thread `https://f95zone.to/threads/name.12345/` | Version from the thread title `Name [v0.8] [Developer]` and the "Thread Updated" date, without login. Only with `ADULT_SOURCES=true` |
+| F95Zone | Thread `https://f95zone.to/threads/name.12345/` | Version and date of the last update from F95Zone's "Latest Updates" data, searched by the game's title and matched by the thread number in the link, without login. If the search does not find the thread, the thread page; when that asks for a browser check, "check by hand". Only with `ADULT_SOURCES=true` |
 | TFGames | Game page | No automatic check: the site only lets real browsers through (bot protection). Only offered with `ADULT_SOURCES=true` |
 | others | any | "check by hand" |
 
-Bot protection is never circumvented, and Playshelf never downloads games
+Pages that ask for a browser check (bot protection) are shown as "check by hand" with a
+link to the page. Bot protection is never circumvented, and Playshelf never downloads games
 itself; updates always come in as ZIP files.
 
 ### API

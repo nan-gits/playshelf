@@ -359,22 +359,26 @@ function showUpdateStatus(line, game) {
   line.className = "update-status";
   if (!update) return;
   line.hidden = false;
-  if (update.available) {
+  const updateLink = (text) => {
     const link = document.createElement("a");
     link.href = game.update_url;
     link.target = "_blank";
     link.rel = "noopener noreferrer";
-    link.textContent = t("update.available", { version: onlineText(update) });
+    link.textContent = text;
+    return link;
+  };
+  if (update.available) {
     line.classList.add("available");
     line.title = checkedText(update);
-    line.append(link);
+    line.append(updateLink(t("update.available", { version: onlineText(update) })));
   } else if (update.status === "error") {
     line.classList.add("failed");
     line.textContent = t("update.failed", { error: update.error });
     line.title = checkedText(update);
   } else if (update.status === "manual") {
+    // A link, so checking by hand is one click away
     line.classList.add("manual");
-    line.textContent = t("update.manual");
+    line.append(updateLink(t("update.manual")));
     line.title = update.error;
   } else if (update.version && !game.version) {
     line.textContent = t("update.online", { version: onlineText(update) });

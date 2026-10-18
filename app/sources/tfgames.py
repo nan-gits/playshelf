@@ -17,7 +17,7 @@ class TFGames:
     domains = ("tfgames.site",)
     adult = True
 
-    def latest(self, url: str, fetch: updates.Fetch) -> updates.Latest:
+    def latest(self, url: str, fetch: updates.Fetch, title: str | None = None) -> updates.Latest:
         raise updates.ManualCheck(
             "TFGames does not allow automatic requests (bot protection). Please check the page"
             " by hand."

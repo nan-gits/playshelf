@@ -1,6 +1,8 @@
 """Framework of the online update check, without real network access."""
 
+import urllib.error
 from collections.abc import Iterator
+from email.message import Message
 from pathlib import Path
 
 import pytest
@@ -40,7 +42,7 @@ class Dummy:
     domains = ("example.org",)
     adult = False
 
-    def latest(self, url: str, fetch: updates.Fetch) -> updates.Latest:
+    def latest(self, url: str, fetch: updates.Fetch, title: str | None = None) -> updates.Latest:
         text = fetch(url).text
         key, _, value = text.partition("=")
         if key == "boom":
@@ -230,6 +232,27 @@ def test_fetcher_waits_between_requests_to_same_host(monkeypatch) -> None:
     assert slept == [4.0]
     assert requests[0][1] == 7
     assert requests[0][0].get_header("User-agent").startswith("Playshelf/")
+
+
+@pytest.mark.parametrize(
+    ("headers", "error"),
+    [({"cf-mitigated": "challenge"}, updates.BotProtection), ({}, updates.CheckError)],
+)
+def test_fetcher_recognizes_bot_protection(monkeypatch, headers, error) -> None:
+    answer = Message()
+    for name, value in headers.items():
+        answer[name] = value
+
+    def fake_urlopen(request, timeout):
+        raise urllib.error.HTTPError(request.full_url, 403, "Forbidden", answer, None)
+
+    monkeypatch.setattr(updates.urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(error) as caught:
+        updates.Fetcher(min_delay=0)("https://f95zone.to/threads/1/")
+    is_manual = isinstance(caught.value, updates.ManualCheck)
+    assert is_manual == bool(headers)
+    if is_manual:
+        assert "f95zone.to asks for a browser check" in str(caught.value)
 
 
 # API

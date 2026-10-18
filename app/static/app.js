@@ -1007,7 +1007,7 @@ async function loadMe() {
   const { accounts, user } = state.me;
   $("#logout").hidden = !accounts;
   $("#account").hidden = !accounts;
-  $("#account").textContent = user.username;
+  $("#account-name").textContent = user.username;
   $("#users-button").hidden = !(accounts && user.is_admin);
   $("#rescan").hidden = !user.is_admin;
   if (accounts && user.is_admin) await loadUsers();
@@ -1164,7 +1164,9 @@ const THEMES = ["auto", "light", "dark"];
 function applyTheme(theme) {
   if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
   else delete document.documentElement.dataset.theme;
-  $("#theme").textContent = t(`theme.${THEMES.includes(theme) ? theme : "auto"}`);
+  const name = THEMES.includes(theme) ? theme : "auto";
+  $("#theme use").setAttribute("href", `#icon-${name}`);
+  $("#theme-name").textContent = t(`theme.${name}`);
   $("#theme").title = t("theme.title");
 }
 

@@ -1,9 +1,9 @@
 {
   "theme.label": "Change color scheme",
   "theme.title": "Change color scheme (automatic, light, dark)",
-  "theme.auto": "◐ Auto",
-  "theme.light": "☀ Light",
-  "theme.dark": "☾ Dark",
+  "theme.auto": "Auto",
+  "theme.light": "Light",
+  "theme.dark": "Dark",
   "logout": "Sign out",
   "search.label": "Search",
   "search.placeholder": "Search by name, folder, notes …",

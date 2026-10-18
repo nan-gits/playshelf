@@ -6,7 +6,7 @@ Play data (last played, starts, favourite, status) is kept per account.
 
 Each account gets its own inbox subfolder, `INBOX_DIR/<user name>/`, which is why
 user names are restricted to characters that are safe in folder and SMB user
-names. ZIP files directly in `INBOX_DIR` belong to the first admin.
+names. Archives directly in `INBOX_DIR` belong to the first admin.
 """
 
 import logging

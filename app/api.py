@@ -9,7 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from app import images, imports, scanner, stats, updates
+from app import images, importer, imports, scanner, stats, updates
 from app.accounts import Admin, User
 from app.config import Settings
 from app.db import (
@@ -319,7 +319,7 @@ def list_statuses() -> list[str]:
     return STATUSES
 
 
-# ZIP import
+# Archive import
 
 
 class ImportConfirm(GameUpdate):
@@ -344,7 +344,7 @@ async def upload_import(
     user: User,
     filename: Annotated[str, Query(min_length=1, max_length=255)] = "Upload.zip",
 ) -> dict[str, Any]:
-    """Accepts a ZIP as raw request body (not a form), extracts and checks it.
+    """Accepts an archive as raw request body (not a form), extracts and checks it.
 
     This lets the browser send the upload with progress, and large archives go
     straight into the data folder instead of a temporary system folder.
@@ -359,7 +359,7 @@ async def upload_import(
         raise too_big
 
     settings.imports_dir.mkdir(parents=True, exist_ok=True)
-    archive = settings.imports_dir / f"{imports.new_token()}.zip"
+    archive = settings.imports_dir / f"{imports.new_token()}.upload"
     try:
         received = 0
         with archive.open("wb") as file:
@@ -379,12 +379,13 @@ async def upload_import(
 
 
 @router.get("/imports/limits")
-def import_limits(settings: Config, _: User) -> dict[str, int]:
-    """Size limits for imports, so the browser can refuse a file that is too large
+def import_limits(settings: Config, _: User) -> dict[str, Any]:
+    """Size limits and archive formats for imports, so the browser can refuse a file
     before uploading it."""
     return {
         "max_upload_bytes": settings.max_upload_mb * MB,
         "max_extracted_bytes": settings.max_extracted_mb * MB,
+        "formats": importer.supported_suffixes(),
     }
 
 

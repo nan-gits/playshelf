@@ -913,8 +913,10 @@ function removeUploadItem(item) {
 function queueUploads(files) {
   for (const file of files) {
     const view = uploadItem(file);
-    if (!file.name.toLowerCase().endsWith(".zip")) {
-      failUpload(view, t("upload.not_zip"));
+    // Without the limits yet, the server decides
+    const formats = state.limits?.formats;
+    if (formats && !formats.some((suffix) => file.name.toLowerCase().endsWith(suffix))) {
+      failUpload(view, t("upload.not_archive", { formats: formats.join(", ") }));
       continue;
     }
     const limit = state.limits?.max_upload_bytes;
@@ -955,7 +957,7 @@ function uploadFile(file, view) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `/api/imports?filename=${encodeURIComponent(file.name)}`);
-    xhr.setRequestHeader("Content-Type", "application/zip");
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
     let sent = false;
     let stalled = false;
     let watchdog;
@@ -1227,7 +1229,12 @@ async function init() {
     loadMe(),
   ]);
   // Without the limits the server still refuses a file that is too large, only later
-  api("/api/imports/limits").then((limits) => (state.limits = limits), () => {});
+  api("/api/imports/limits").then((limits) => {
+    state.limits = limits;
+    // The file picker offers the formats this server imports (".tar.gz" as ".gz")
+    const endings = new Set(limits.formats.map((suffix) => `.${suffix.split(".").pop()}`));
+    $("#upload-input").accept = [...endings].join(",");
+  }, () => {});
   for (const source of state.sources) {
     $("#source-filter").append(new Option(sourceLabel(source), source));
     $("#edit-form").elements.source.append(new Option(sourceLabel(source), source));

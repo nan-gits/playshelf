@@ -23,6 +23,8 @@ dependencies = [
     "pydantic-settings>=2.4",
     "python-multipart>=0.0.9",
     "pillow>=10.1",
+    # RAR, 7z and tar imports; needs the libarchive library (in the Docker image)
+    "libarchive-c>=5.1",
 ]
 
 [project.urls]

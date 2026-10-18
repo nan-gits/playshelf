@@ -1,4 +1,5 @@
 import io
+import shutil
 import time
 import zipfile
 from pathlib import Path
@@ -10,6 +11,7 @@ from app.config import Settings
 from app.db import DB_FILENAME, Database
 from app.inbox import InboxWatcher
 from app.main import create_app
+from tests.test_importer import ARCHIVES, needs_libarchive
 
 
 def zip_bytes(files: dict[str, str]) -> bytes:
@@ -84,20 +86,45 @@ def test_ignores_other_files_and_subfolders(watcher: InboxWatcher, settings: Set
     assert watcher.db.list_imports() == []
 
 
+@needs_libarchive
+def test_rar_and_7z_are_imported(watcher: InboxWatcher, settings: Settings) -> None:
+    for suffix in (".rar", ".7z"):
+        shutil.copy(ARCHIVES / f"game{suffix}", settings.inbox_dir / f"Quiet Valley{suffix}")
+    watcher.scan_once(now=0)
+    assert len(watcher.scan_once(now=10)) == 2
+    assert sorted(p.name for p in (settings.inbox_dir / "processed").iterdir()) == [
+        "Quiet Valley.7z",
+        "Quiet Valley.rar",
+    ]
+    assert [i["folder"] for i in watcher.db.list_imports()] == ["Quiet Valley 0.3"] * 2
+
+
 def test_other_archives_go_to_error_folder(watcher: InboxWatcher, settings: Settings) -> None:
-    (settings.inbox_dir / "Game v1.3.rar").write_bytes(b"Rar!")
-    (settings.inbox_dir / "Game.7z").write_bytes(b"7z")
+    (settings.inbox_dir / "Game v1.3.part2.rar").write_bytes(b"Rar!")
+    (settings.inbox_dir / "Game.gz").write_bytes(b"gz")
     watcher.scan_once(now=0)
     assert len(watcher.scan_once(now=10)) == 2
     failed = settings.inbox_dir / "failed"
     assert sorted(p.name for p in failed.iterdir()) == [
-        "Game v1.3.rar",
-        "Game v1.3.rar.txt",
-        "Game.7z",
-        "Game.7z.txt",
+        "Game v1.3.part2.rar",
+        "Game v1.3.part2.rar.txt",
+        "Game.gz",
+        "Game.gz.txt",
     ]
-    assert "Only ZIP files" in (failed / "Game v1.3.rar.txt").read_text(encoding="utf-8")
+    assert "several parts" in (failed / "Game v1.3.part2.rar.txt").read_text(encoding="utf-8")
+    assert "Supported: .zip" in (failed / "Game.gz.txt").read_text(encoding="utf-8")
     assert watcher.db.list_imports() == []
+
+
+def test_rar_without_libarchive_gets_a_note(
+    watcher: InboxWatcher, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.importer.libarchive", None)
+    shutil.copy(ARCHIVES / "game.rar", settings.inbox_dir / "Game.rar")
+    watcher.scan_once(now=0)
+    watcher.scan_once(now=10)
+    note = (settings.inbox_dir / "failed" / "Game.rar.txt").read_text(encoding="utf-8")
+    assert "Supported: .zip." in note
 
 
 def test_same_name_again_does_not_overwrite(watcher: InboxWatcher, settings: Settings) -> None:

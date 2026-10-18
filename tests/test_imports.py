@@ -7,9 +7,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app import imports, scanner
+from app import importer, imports, scanner
 from app.config import Settings
 from app.main import create_app
+from tests.test_importer import ARCHIVES, needs_libarchive
 
 
 def write(path: Path, content: str = "") -> None:
@@ -71,7 +72,7 @@ def test_upload_creates_pending_import_with_update_suggestion(
     assert (settings.imports_dir / imp["staging"] / imp["folder"]).is_dir()
     assert api.get("/api/imports").json() == [imp]
     # The uploaded archive itself is not kept
-    assert not list(settings.imports_dir.glob("*.zip"))
+    assert not list(settings.imports_dir.glob("*.upload"))
 
 
 def test_suggestion_by_title_only(api: TestClient) -> None:
@@ -115,6 +116,18 @@ def test_upload_size_limit(settings: Settings) -> None:
     assert list(settings.imports_dir.iterdir()) == []
 
 
+@needs_libarchive
+def test_upload_7z(api: TestClient, settings: Settings) -> None:
+    content = (ARCHIVES / "game.7z").read_bytes()
+    response = api.post("/api/imports", params={"filename": "Quiet Valley.7z"}, content=content)
+    assert response.status_code == 201, response.text
+    assert (response.json()["folder"], response.json()["filename"]) == (
+        "Quiet Valley 0.3",
+        "Quiet Valley",
+    )
+    assert [p.name for p in settings.imports_dir.iterdir() if p.is_file()] == []
+
+
 def test_import_limits(settings: Settings) -> None:
     settings.max_upload_mb = 16
     settings.max_extracted_mb = 32
@@ -122,7 +135,9 @@ def test_import_limits(settings: Settings) -> None:
         assert client.get("/api/imports/limits").json() == {
             "max_upload_bytes": 16 * 1024 * 1024,
             "max_extracted_bytes": 32 * 1024 * 1024,
+            "formats": importer.supported_suffixes(),
         }
+        assert ".zip" in client.get("/api/imports/limits").json()["formats"]
 
 
 def test_confirm_as_new_game(api: TestClient, settings: Settings) -> None:

@@ -28,7 +28,11 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        # libarchive for the RAR, 7z and tar import tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libarchive13t64
+          pip install -e ".[dev]"
 
       - name: ruff check
         run: ruff check --output-format=github

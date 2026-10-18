@@ -1,9 +1,16 @@
-"""Safe ZIP import: check the archive, extract it into a staging folder, detect the game.
+"""Safe archive import: check the archive, extract it into a staging folder, detect the game.
 
-Every archive entry is checked before anything is written: no absolute paths, no
-`..`, no symbolic links, no encrypted files, no `.exe`. The size is limited twice:
+ZIP archives are read with Python's `zipfile`. RAR, 7z and tar archives are read
+with libarchive (through the `libarchive-c` package), if the libarchive library is
+installed; the Docker image contains it.
+
+Every archive entry is checked: no absolute paths, no `..`, no symbolic or hard
+links, no special files, no encrypted files, no `.exe`. The size is limited twice:
 by the sizes declared in the archive and, while extracting, by the bytes actually
-written, so that forged sizes (zip bombs) do not slip through.
+written, so that forged sizes (archive bombs) do not slip through. ZIP entries are
+all checked before anything is written; other formats can only be read in order,
+so their entries are checked one by one while extracting, and a rejected archive
+leaves nothing behind either way.
 """
 
 import re
@@ -15,6 +22,27 @@ from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
 from app import scanner
+
+try:
+    import libarchive
+except Exception:  # the package, or the libarchive library it loads, is missing
+    libarchive = None  # type: ignore[assignment]
+
+ZIP_SUFFIX = ".zip"
+# Formats read through libarchive
+LIBARCHIVE_SUFFIXES = (
+    ".tar.gz",
+    ".tar.bz2",
+    ".tar.xz",
+    ".rar",
+    ".7z",
+    ".tar",
+    ".tgz",
+    ".tbz2",
+    ".txz",
+)
+# Parts of a split RAR archive, for example "Game.part1.rar"
+_SPLIT_RAR = re.compile(r"\.part\d+\.rar$", re.IGNORECASE)
 
 # Entries that never belong to the game and are skipped silently
 JUNK_DIRS = {"__macosx"}
@@ -69,14 +97,38 @@ def clean_folder_name(name: str) -> str:
     return name or "Game"
 
 
+def supported_suffixes() -> list[str]:
+    """Archive file name endings this server can import."""
+    return [ZIP_SUFFIX, *(LIBARCHIVE_SUFFIXES if libarchive is not None else ())]
+
+
+def archive_suffix(filename: str) -> str | None:
+    """The supported archive ending of a file name (".zip", ".tar.gz" …), or None."""
+    name = filename.lower()
+    return next((s for s in supported_suffixes() if name.endswith(s)), None)
+
+
 def archive_stem(filename: str) -> str:
-    """File name without path and without .zip."""
+    """File name without path and without an archive ending such as .zip or .tar.gz."""
     name = filename.replace("\\", "/").rsplit("/", 1)[-1]
-    return re.sub(r"\.zip$", "", name, flags=re.IGNORECASE)
+    suffix = next((s for s in (ZIP_SUFFIX, *LIBARCHIVE_SUFFIXES) if name.lower().endswith(s)), None)
+    return name[: -len(suffix)] if suffix else name
 
 
 def _is_symlink(info: zipfile.ZipInfo) -> bool:
     return stat.S_ISLNK(info.external_attr >> 16)
+
+
+def _check_file(path: PurePosixPath) -> None:
+    """Checks a file of the game, whatever the archive format."""
+    if path.suffix.lower() == ".exe":
+        raise ImportRejected(
+            f"The archive contains a Windows program ({path.name}). Only HTML games are imported."
+        )
+
+
+def _too_many(count: int) -> str:
+    return f"The archive contains {count} files; the maximum is {MAX_FILES}."
 
 
 def _check_members(
@@ -92,19 +144,13 @@ def _check_members(
             raise ImportRejected(f"The archive contains a symbolic link ({info.filename}).")
         if info.flag_bits & 0x1:
             raise ImportRejected("The archive is password protected.")
-        if path.suffix.lower() == ".exe":
-            raise ImportRejected(
-                f"The archive contains a Windows program ({path.name}). "
-                "Only HTML games are imported."
-            )
+        _check_file(path)
         members.append((info, path))
         total += info.file_size
     if not members:
         raise ImportRejected("The archive is empty.")
     if len(members) > MAX_FILES:
-        raise ImportRejected(
-            f"The archive contains {len(members)} files; the maximum is {MAX_FILES}."
-        )
+        raise ImportRejected(_too_many(len(members)))
     if total > max_bytes:
         raise ImportRejected(_too_big(total, max_bytes))
     return members
@@ -135,6 +181,91 @@ def _extract(archive: zipfile.ZipFile, target: Path, max_bytes: int) -> None:
             ) from exc
 
 
+def _extract_zip(archive_path: Path, target: Path, max_bytes: int) -> None:
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            _extract(archive, target, max_bytes)
+    except zipfile.BadZipFile as exc:
+        raise ImportRejected("The file is not a valid ZIP archive or is damaged.") from exc
+    except (zlib.error, EOFError) as exc:
+        raise ImportRejected("The ZIP archive is damaged.") from exc
+    except NotImplementedError as exc:
+        raise ImportRejected(
+            "The ZIP archive uses an unsupported compression method. "
+            'Please repack it with "Deflate".'
+        ) from exc
+
+
+def _unreadable(detail: str) -> ImportRejected:
+    if "encrypt" in detail.lower() or "passphrase" in detail.lower():
+        return ImportRejected("The archive is password protected.")
+    return ImportRejected(
+        "The archive could not be read. It may be damaged, password protected or of an"
+        f" unsupported kind ({detail})."
+    )
+
+
+def _extract_other(archive_path: Path, target: Path, max_bytes: int) -> None:
+    """Extracts a RAR, 7z or tar archive through libarchive, checking each entry first."""
+    files = written = 0
+    try:
+        with libarchive.file_reader(str(archive_path)) as archive:
+            for entry in archive:
+                try:
+                    name = entry.pathname
+                except UnicodeDecodeError as exc:
+                    raise ImportRejected("The archive contains unreadable file names.") from exc
+                path = member_path(name or "")
+                if path is None or entry.isdir:
+                    # Never read the data of a folder: libarchive refuses that for RAR
+                    continue
+                if entry.issym or entry.islnk:
+                    raise ImportRejected(f"The archive contains a link ({name}).")
+                if not entry.isreg:
+                    raise ImportRejected(f"The archive contains a special file ({name}).")
+                _check_file(path)
+                files += 1
+                if files > MAX_FILES:
+                    raise ImportRejected(_too_many(files))
+                if written + (entry.size or 0) > max_bytes:
+                    raise ImportRejected(_too_big(written + entry.size, max_bytes))
+                destination = target.joinpath(*path.parts)
+                try:
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    with destination.open("wb") as output:
+                        for block in entry.get_blocks(CHUNK_SIZE):
+                            written += len(block)
+                            if written > max_bytes:
+                                raise ImportRejected(_too_big(written, max_bytes))
+                            output.write(block)
+                except (FileExistsError, NotADirectoryError, IsADirectoryError) as exc:
+                    raise ImportRejected(
+                        f"The archive contains conflicting paths ({name})."
+                    ) from exc
+    except libarchive.ArchiveError as exc:
+        raise _unreadable(str(getattr(exc, "msg", None) or exc)) from exc
+    if not files:
+        raise ImportRejected("The archive is empty.")
+
+
+def _extract_any(archive_path: Path, target: Path, filename: str, max_bytes: int) -> None:
+    """Extracts the archive with the reader that fits its content and its name."""
+    if _SPLIT_RAR.search(filename):
+        raise ImportRejected(
+            "Archives split into several parts (.part1.rar, .part2.rar …) are not supported."
+            " Extract the parts and pack the game as one archive."
+        )
+    if filename.lower().endswith(ZIP_SUFFIX) or zipfile.is_zipfile(archive_path):
+        _extract_zip(archive_path, target, max_bytes)
+    elif libarchive is None:
+        raise ImportRejected(
+            "Only ZIP archives can be imported here: RAR, 7z and tar need the libarchive"
+            " library, which is not installed on this server."
+        )
+    else:
+        _extract_other(archive_path, target, max_bytes)
+
+
 def _unwrap(root: Path) -> tuple[Path, list[str]]:
     """Descends into wrapper folders as long as a folder contains exactly one subfolder."""
     wrappers = []
@@ -147,7 +278,7 @@ def _unwrap(root: Path) -> tuple[Path, list[str]]:
 
 
 def extract_game(archive_path: Path, staging: Path, filename: str, max_bytes: int) -> ExtractedGame:
-    """Extracts a ZIP into `staging` (which must not exist yet) and detects the game.
+    """Extracts an archive into `staging` (which must not exist yet) and detects the game.
 
     On any error `staging` is removed again. Rejected archives raise
     `ImportRejected` with an understandable reason.
@@ -157,18 +288,7 @@ def extract_game(archive_path: Path, staging: Path, filename: str, max_bytes: in
     staging.mkdir(parents=True)
     raw.mkdir()
     try:
-        try:
-            with zipfile.ZipFile(archive_path) as archive:
-                _extract(archive, raw, max_bytes)
-        except zipfile.BadZipFile as exc:
-            raise ImportRejected("The file is not a valid ZIP archive or is damaged.") from exc
-        except (zlib.error, EOFError) as exc:
-            raise ImportRejected("The ZIP archive is damaged.") from exc
-        except NotImplementedError as exc:
-            raise ImportRejected(
-                "The ZIP archive uses an unsupported compression method. "
-                'Please repack it with "Deflate".'
-            ) from exc
+        _extract_any(archive_path, raw, filename, max_bytes)
 
         root, wrappers = _unwrap(raw)
         names = [*wrappers, archive_stem(filename)]

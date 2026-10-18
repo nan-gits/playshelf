@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-18
+
+### Added
+
+- RAR (4 and 5), 7z and tar archives (`.tar`, `.tar.gz`/`.tgz`,
+  `.tar.bz2`/`.tbz2`, `.tar.xz`/`.txz`) can be imported like ZIP files, by
+  upload and through the inbox folder. They are read with libarchive, which
+  the Docker image now contains; without it only ZIP works. The same checks
+  apply to every format, and password protected and split archives are
+  refused with a clear reason.
+- Delete a game in its edit dialog. Admins delete it for everyone, with its
+  folder and backups. Other accounts remove it from their own library; its
+  files are deleted only if no other account uses the game.
+- Backups: the edit dialog shows the size of each saved version and can delete
+  it. **Backups** in the toolbar lists the backups of all games, largest first.
+  Admins also see backup folders that no game refers to any more and can
+  delete them.
+- **Overview** for admins: which account has which games, with that account's
+  last start and number of starts, and the games nobody owns yet.
+- A GitHub link in the top bar.
+- API: `POST /api/games/{id}/remove`, `GET /api/backups`,
+  `DELETE /api/backups/{id}`, `DELETE /api/backups?path=…`,
+  `GET /api/overview`; `GET /api/imports/limits` also returns the supported
+  archive endings.
+
+### Changed
+
+- `DELETE /api/games/{id}` deletes the game with its folder and backups
+  instead of removing only entries whose folder is missing. Removing the entry
+  of a missing folder now deletes its backups as well.
+- **Import ZIP** is now called **Import game**.
+
+### Fixed
+
+- In the edit dialog of a game without a cover image, the placeholder no longer
+  takes the whole row and squeezes the image controls into a narrow column.
+
 ## [1.0.2] - 2026-10-18
 
 ### Fixed
@@ -77,7 +114,8 @@ First public release.
   Container Registry, and a Docker Compose setup with an optional Samba share
   for the inbox.
 
-[Unreleased]: https://github.com/nan-gits/playshelf/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/nan-gits/playshelf/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/nan-gits/playshelf/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/nan-gits/playshelf/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/nan-gits/playshelf/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/nan-gits/playshelf/releases/tag/v1.0.0

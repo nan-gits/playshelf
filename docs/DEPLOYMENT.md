@@ -25,7 +25,7 @@ Open `http://<host>:8080`. All data is stored in `./data` next to
 |----------------|---------|
 | `data/games/`  | The game library, one subfolder per game |
 | `data/data/`   | Database, database backups, backups of replaced game versions, thumbnails |
-| `data/inbox/`  | Inbox: ZIP files placed here are imported automatically |
+| `data/inbox/`  | Inbox: archives placed here are imported automatically |
 
 Missing folders are created on the first start and handed to the user
 Playshelf runs as (see [User and file permissions](#user-and-file-permissions)).
@@ -53,11 +53,11 @@ Settings go in a file named `.env` next to `docker-compose.yml`, one
 | `TZ` | `UTC` | Time zone for timestamps and logs, e.g. `Europe/Berlin` |
 | `AUTH` | `accounts` | `accounts` = sign in with user accounts, `none` = no login, see [Accounts and sign-in](#accounts-and-sign-in) |
 | `PASSWORD_HASH` | empty | Only when upgrading from a version with a single password, see [Accounts and sign-in](#accounts-and-sign-in) |
-| `MAX_UPLOAD_MB` | `4096` | Largest ZIP file accepted for import |
-| `MAX_EXTRACTED_MB` | `8192` | Largest unpacked size of a ZIP file (protection against zip bombs) |
+| `MAX_UPLOAD_MB` | `4096` | Largest archive accepted for import |
+| `MAX_EXTRACTED_MB` | `8192` | Largest unpacked size of an archive (protection against archive bombs) |
 | `KEEP_BACKUPS` | `3` | Old versions kept per game after an update |
 | `INBOX_POLL_SECONDS` | `5` | How often the inbox is checked; `0` turns the inbox off |
-| `INBOX_SETTLE_SECONDS` | `10` | How long a ZIP file must stay unchanged before it is imported |
+| `INBOX_SETTLE_SECONDS` | `10` | How long an archive must stay unchanged before it is imported |
 | `UPDATE_CHECK_HOURS` | `24` | Interval of the online update check; `0` = only when started by hand |
 | `ADULT_SOURCES` | `false` | Enables the F95Zone and TFGames update sources |
 | `UI_LANGUAGE` | `auto` | Interface language: `en`, `de`, or `auto` for the browser's language |
@@ -126,7 +126,7 @@ the port then acts as the first admin. Only use this on a network you trust.
 
 ## Inbox over SMB (optional)
 
-The inbox becomes most useful as a network folder: copy a ZIP file into it
+The inbox becomes most useful as a network folder: copy an archive into it
 from any computer and Playshelf imports it on its own. Playshelf ships an
 optional Samba service for this in `compose.samba.yml`. It offers one share,
 `\\<host>\inbox`. Everyone signs in with their own SMB account and sees only
@@ -166,7 +166,7 @@ them.
    - Linux: `smb://<host>/inbox` in the file manager, or
      `smbclient //<host>/inbox -U alice`.
 
-Copy a ZIP file into the share. After about 15 seconds it moves to
+Copy an archive into the share. After about 15 seconds it moves to
 `processed/` and the import appears under **Pending imports** for that
 account. Archives that were rejected move to `failed/`, next to a `.txt` file
 with the reason.
@@ -195,7 +195,7 @@ mind:
 
 - Serve it at the root of its own host name (`https://games.example.org/`).
   Running it under a sub-path (`/playshelf/`) is not supported.
-- Allow large request bodies, or ZIP uploads fail. The proxy's limit must be
+- Allow large request bodies, or uploads of large archives fail. The proxy's limit must be
   at least `MAX_UPLOAD_MB`. Proxies have their own default (nginx: 1 MB,
   Nginx Proxy Manager: 2000 MB), and they reject a larger file with error 413,
   often only after part of it was sent. Playshelf then reports that a reverse

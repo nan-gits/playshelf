@@ -1192,6 +1192,166 @@ function uploadFile(file, view) {
   });
 }
 
+// Import from a download link: the server downloads, the list shows its progress
+
+const DOWNLOAD_ACTIVE = ["queued", "downloading", "extracting"];
+const downloadViews = new Map();
+let downloadPolling = false;
+
+function openLinkDialog() {
+  const form = $("#link-form");
+  form.reset();
+  $("#link-error").textContent = "";
+  $("#link-dialog").showModal();
+}
+
+async function startDownload(event) {
+  event.preventDefault();
+  const form = event.target;
+  const url = form.elements.url.value.trim();
+  const error = $("#link-error");
+  if (!url) {
+    error.textContent = t("link.empty");
+    return;
+  }
+  const submit = form.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  try {
+    const job = await api("/api/downloads", { method: "POST", body: JSON.stringify({ url }) });
+    $("#link-dialog").close();
+    showDownload(job);
+    pollDownloads();
+  } catch (err) {
+    error.textContent = err.message;
+  } finally {
+    submit.disabled = false;
+  }
+}
+
+function downloadView(job) {
+  let view = downloadViews.get(job.id);
+  if (view) return view;
+  const item = document.createElement("li");
+  const name = document.createElement("span");
+  name.className = "name";
+  const progress = document.createElement("progress");
+  progress.max = 1;
+  const status = document.createElement("span");
+  status.className = "status";
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "secondary small";
+  close.textContent = "✕";
+  item.append(name, progress, status, close);
+  $("#uploads").append(item);
+  $("#uploads").hidden = false;
+  view = { item, name, progress, status, close, job: { ...job, state: null }, last: null, speed: 0 };
+  close.addEventListener("click", () => removeDownload(view));
+  downloadViews.set(job.id, view);
+  return view;
+}
+
+function showDownload(job) {
+  const view = downloadView(job);
+  const previous = view.job.state;
+  view.job = job;
+  view.name.textContent = job.filename;
+  const active = DOWNLOAD_ACTIVE.includes(job.state);
+  view.close.setAttribute("aria-label", t(active ? "download.cancel" : "upload.close"));
+  view.close.title = active ? t("download.cancel") : "";
+  view.close.disabled = job.state === "extracting";
+  if (job.state === "queued") {
+    view.progress.removeAttribute("value");
+    view.status.textContent = t("download.queued");
+  } else if (job.state === "downloading") {
+    const now = performance.now();
+    if (view.last && now > view.last.time) {
+      const speed = ((job.received - view.last.received) / (now - view.last.time)) * 1000;
+      view.speed = view.speed ? view.speed * 0.7 + speed * 0.3 : speed; // smoothed
+    }
+    view.last = { received: job.received, time: now };
+    let text;
+    if (!job.received) {
+      text = t("download.connecting");
+    } else if (job.total) {
+      text = t("download.progress", {
+        received: sizeText(job.received),
+        total: sizeText(job.total),
+        percent: Math.floor((job.received / job.total) * 100),
+      });
+    } else {
+      text = t("download.progress_unknown", { received: sizeText(job.received) });
+    }
+    if (view.speed > 0) text += ` · ${t("download.speed", { speed: sizeText(view.speed) })}`;
+    if (job.total) view.progress.value = job.received / job.total;
+    else view.progress.removeAttribute("value");
+    view.status.textContent = text;
+  } else if (job.state === "extracting") {
+    view.progress.removeAttribute("value");
+    view.status.textContent = t("upload.extracting");
+  } else if (job.state === "done") {
+    view.progress.remove();
+    view.status.textContent = t("upload.done");
+    view.item.classList.add("done");
+    if (previous !== "done") {
+      loadImports();
+      setTimeout(() => removeDownload(view), 6000);
+    }
+  } else {
+    view.progress.remove();
+    view.status.textContent = job.error || t("error.status", { status: job.state });
+    view.item.classList.add("failed");
+  }
+}
+
+function forgetDownload(view) {
+  downloadViews.delete(view.job.id);
+  removeUploadItem(view.item);
+}
+
+async function removeDownload(view) {
+  if (!downloadViews.has(view.job.id)) return;
+  const active = DOWNLOAD_ACTIVE.includes(view.job.state);
+  if (active && !confirm(t("download.cancel_confirm", { name: view.job.filename }))) return;
+  try {
+    await api(`/api/downloads/${view.job.id}`, { method: "DELETE" });
+  } catch (err) {
+    // Already gone on the server (for example after a restart): just remove it here
+    if (active) {
+      showNotice(err.message);
+      return;
+    }
+  }
+  forgetDownload(view);
+}
+
+// Polls the account's downloads while one is running; also restores the list after a reload
+async function pollDownloads() {
+  if (downloadPolling) return;
+  downloadPolling = true;
+  try {
+    for (;;) {
+      let jobs;
+      try {
+        jobs = await api("/api/downloads");
+      } catch {
+        jobs = null;
+      }
+      if (jobs) {
+        const ids = new Set(jobs.map((job) => job.id));
+        for (const job of jobs) showDownload(job);
+        for (const view of [...downloadViews.values()]) {
+          if (!ids.has(view.job.id)) forgetDownload(view);
+        }
+        if (!jobs.some((job) => DOWNLOAD_ACTIVE.includes(job.state))) break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  } finally {
+    downloadPolling = false;
+  }
+}
+
 function setupDropZone() {
   const zone = $("#drop-zone");
   const hasFiles = (event) => [...(event.dataTransfer?.types || [])].includes("Files");
@@ -1463,6 +1623,9 @@ async function init() {
     event.target.value = "";
   });
   setupDropZone();
+  $("#link-import").addEventListener("click", openLinkDialog);
+  $("#link-cancel").addEventListener("click", () => $("#link-dialog").close());
+  $("#link-form").addEventListener("submit", startDownload);
   $("#edit-form").addEventListener("submit", saveEditor);
   $("#account").addEventListener("click", openAccount);
   $("#account-close").addEventListener("click", () => $("#account-dialog").close());
@@ -1498,6 +1661,7 @@ async function init() {
 
   await load();
   await loadImports();
+  pollDownloads();
 }
 
 init();

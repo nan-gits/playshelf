@@ -51,6 +51,7 @@
     <button id="rescan" type="button" class="secondary" hidden>{{toolbar.rescan}}</button>
     <button id="check-updates" type="button" class="secondary" title="{{toolbar.check_updates_title}}">{{toolbar.check_updates}}</button>
     <button id="upload" type="button">{{toolbar.upload}}</button>
+    <button id="link-import" type="button" class="secondary">{{toolbar.link_import}}</button>
     <input id="upload-input" type="file" accept=".zip,.rar,.7z,.tar,.gz,.tgz,.bz2,.tbz2,.xz,.txz" multiple hidden>
   </div>
   <p id="summary" class="muted" aria-live="polite"></p>
@@ -147,6 +148,20 @@
       <button type="button" id="overview-close" class="secondary">{{action.close}}</button>
     </div>
   </div>
+</dialog>
+
+<dialog id="link-dialog" aria-labelledby="link-heading">
+  <form id="link-form" novalidate>
+    <h2 id="link-heading">{{link.heading}}</h2>
+    <p class="muted small-text">{{link.intro}}</p>
+    <label>{{link.url}}<input name="url" type="url" required maxlength="2000" placeholder="https://" autocomplete="off"></label>
+    <p class="hint">{{link.hosters}}</p>
+    <p class="error" id="link-error" role="alert"></p>
+    <div class="actions">
+      <button type="button" id="link-cancel" class="secondary">{{action.cancel}}</button>
+      <button type="submit">{{link.start}}</button>
+    </div>
+  </form>
 </dialog>
 
 <dialog id="account-dialog" aria-labelledby="account-heading">

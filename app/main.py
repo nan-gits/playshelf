@@ -14,7 +14,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import PROJECT_URL, __version__, i18n, imports, scanner, stats, updates, users
+from app import PROJECT_URL, __version__, downloads, i18n, imports, scanner, stats, updates, users
 from app.accounts import router as accounts_router
 from app.api import router as api_router
 from app.api import validation_error_handler
@@ -68,6 +68,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.db.sync(scanner.scan(settings.games_dir))
         stats.fill_backup_sizes(settings, app.state.db)
         imports.cleanup(settings, app.state.db)
+        app.state.downloads = downloads.Downloads(settings, app.state.db)
         try_daily_backup(settings)
         tasks = [asyncio.create_task(run_daily_backups(settings))]
         if settings.inbox_poll_seconds > 0:
@@ -83,6 +84,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         yield
         for task in tasks:
             task.cancel()
+        app.state.downloads.shutdown()
 
     app = FastAPI(title="Playshelf", version=__version__, lifespan=lifespan)
     app.state.settings = settings

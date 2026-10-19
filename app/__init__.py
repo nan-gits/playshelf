@@ -1,5 +1,5 @@
 """Playshelf: a self-hosted library for HTML games."""
 
-__version__ = "1.1.1"
+__version__ = "1.2.0"
 
 PROJECT_URL = "https://github.com/nan-gits/playshelf"

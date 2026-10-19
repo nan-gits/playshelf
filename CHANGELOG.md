@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-19
+
+### Added
+
+- **Import from link:** paste a download link and Playshelf downloads the
+  archive on the server, with progress in the page, then extracts and checks
+  it like an upload. Downloads continue when the page is closed and can be
+  cancelled. Pixeldrain, Dropbox and Google Drive share links are converted to
+  their download address; MEGA, Gofile and Patreon links are refused with an
+  explanation, as are links that lead to a web page instead of a file.
+  `MAX_UPLOAD_MB` applies.
+- `URL_IMPORT_PRIVATE_NETWORKS` (default `false`): by default the link import
+  only connects to internet addresses, so it cannot be used to reach devices in
+  the local network.
+- API: `POST /api/downloads`, `GET /api/downloads`,
+  `DELETE /api/downloads/{id}`.
+
 ## [1.1.1] - 2026-10-18
 
 ### Fixed
@@ -123,7 +140,8 @@ First public release.
   Container Registry, and a Docker Compose setup with an optional Samba share
   for the inbox.
 
-[Unreleased]: https://github.com/nan-gits/playshelf/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/nan-gits/playshelf/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/nan-gits/playshelf/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/nan-gits/playshelf/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/nan-gits/playshelf/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/nan-gits/playshelf/compare/v1.0.1...v1.0.2

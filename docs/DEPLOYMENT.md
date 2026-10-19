@@ -55,6 +55,7 @@ Settings go in a file named `.env` next to `docker-compose.yml`, one
 | `PASSWORD_HASH` | empty | Only when upgrading from a version with a single password, see [Accounts and sign-in](#accounts-and-sign-in) |
 | `MAX_UPLOAD_MB` | `4096` | Largest archive accepted for import |
 | `MAX_EXTRACTED_MB` | `8192` | Largest unpacked size of an archive (protection against archive bombs) |
+| `URL_IMPORT_PRIVATE_NETWORKS` | `false` | Lets **Import from link** download from addresses in the local network (for example a NAS) |
 | `KEEP_BACKUPS` | `3` | Old versions kept per game after an update |
 | `INBOX_POLL_SECONDS` | `5` | How often the inbox is checked; `0` turns the inbox off |
 | `INBOX_SETTLE_SECONDS` | `10` | How long an archive must stay unchanged before it is imported |
@@ -287,6 +288,10 @@ The unpacked size is only known after the upload.
   the same way you do (for example delete games). Only add games you trust.
 - **Never expose SMB to the internet.** Do not forward port 445; use the
   share inside your home network or over a VPN only.
+- **Import from link** downloads from the internet on the server. It refuses
+  addresses in the local network, so an account cannot use it to reach other
+  devices there; `URL_IMPORT_PRIVATE_NETWORKS=true` lifts that. The upload
+  limit of a reverse proxy does not apply to it, `MAX_UPLOAD_MB` does.
 - **The online update check** connects to the game pages you link (itch.io,
   Patreon, and F95Zone/TFGames if `ADULT_SOURCES` is on). Set
   `UPDATE_CHECK_HOURS=0` to only check when you start it by hand.

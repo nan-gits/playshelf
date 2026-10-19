@@ -10,8 +10,9 @@ played, and import new games and updates from ZIP, RAR, 7z or tar archives.
 - **Versions:** the installed version is recorded per game, with a version
   history. Updates replace the game folder safely and keep the old version as a
   backup you can restore.
-- **Archive import:** upload ZIP, RAR, 7z or tar archives in the browser or
-  drop them into an inbox folder (for example a network share). Every archive
+- **Archive import:** upload ZIP, RAR, 7z or tar archives in the browser,
+  paste a download link and let Playshelf fetch the archive itself, or drop
+  archives into an inbox folder (for example a network share). Every archive
   is checked before it touches the library.
 - **Update check:** for games with an update link (itch.io, Patreon and,
   optionally, F95Zone), Playshelf looks up the newest version online and marks
@@ -94,6 +95,7 @@ cp .env.example .env
 | `PORT` | `8000` | Web server port |
 | `MAX_UPLOAD_MB` | `4096` | Maximum size of an uploaded archive in MB |
 | `MAX_EXTRACTED_MB` | `8192` | Maximum size of an archive's extracted content in MB |
+| `URL_IMPORT_PRIVATE_NETWORKS` | `false` | Allow **Import from link** to download from addresses in the local network |
 | `KEEP_BACKUPS` | `3` | Old versions kept per game after updates |
 | `INBOX_POLL_SECONDS` | `5` | How often the inbox folder is checked, `0` = off |
 | `INBOX_SETTLE_SECONDS` | `10` | How long an archive must stay unchanged before it is imported |
@@ -212,6 +214,26 @@ backups of all your games, largest first; admins also see backup folders that
 no game refers to any more (for example from entries removed with older
 versions) and can delete them there.
 
+**Import from link** takes a download link instead of a file. Playshelf
+downloads the archive on the server, with progress shown in the page, and then
+imports it exactly like an upload; the same checks and `MAX_UPLOAD_MB` apply.
+The download keeps running when the page is closed, and the list comes back
+when the page is opened again (a restart of Playshelf drops running downloads).
+At most two downloads run at the same time, the others wait.
+
+- Direct links to an archive work best (in the browser: "Copy link address" on
+  the download button). Redirects are followed, and the file name comes from
+  the server or, if it has none, from the content.
+- Pixeldrain (`/u/…`), Dropbox and Google Drive share links are turned into
+  their download address automatically.
+- MEGA, Gofile and Patreon cannot be downloaded this way (MEGA decrypts in the
+  browser, the others need a browser session or your login); Playshelf says so
+  right away. Download those files yourself and use **Import game**.
+- If a link leads to a web page instead of a file, the import stops with a
+  message and nothing is kept.
+- Only addresses on the internet are contacted. Links to the local network
+  (for example a NAS) are refused unless `URL_IMPORT_PRIVATE_NETWORKS=true`.
+
 Archives dropped into the inbox are imported once they have not changed for
 `INBOX_SETTLE_SECONDS`, so files still being copied are left alone. Afterwards
 the archive is moved to `processed/`, or to `failed/` next to a `.txt` file
@@ -293,6 +315,9 @@ other errors (not found, rejected archive) with `{"detail": "message"}`.
 | `POST /api/games/{id}/restore` | Restore a backup (`{"backup_id": …}`; the newest one if omitted) |
 | `POST /api/imports?filename=…` | Upload an archive as raw request body, check and extract it |
 | `GET /api/imports` | The account's pending imports with suggestion |
+| `POST /api/downloads` | Import from a link: `{"url": …}`; downloads in the background and returns the download with its `id` |
+| `GET /api/downloads` | The account's downloads with `state` (`queued`, `downloading`, `extracting`, `done`, `failed`), `received`, `total`, `error` and `import_id` |
+| `DELETE /api/downloads/{id}` | Cancel a download, or remove a finished one from the list |
 | `GET /api/imports/limits` | Size limits for imports in bytes (`MAX_UPLOAD_MB`, `MAX_EXTRACTED_MB`) and the supported archive endings (`formats`) |
 | `POST /api/imports/{id}/confirm` | Install: `version` (required), `game_id` for an update, otherwise a new game; optional `entry`, for new games also `title`, `source`, `update_url`, `notes` |
 | `DELETE /api/imports/{id}` | Discard an import |

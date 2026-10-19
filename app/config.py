@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     max_extracted_mb: int = Field(
         default=8192, ge=1, description="Maximum size of an archive's extracted content"
     )
+    url_import_private_networks: bool = Field(
+        default=False,
+        description="Allow importing from download links in the local network",
+    )
     keep_backups: int = Field(default=3, ge=0, description="Backups of old versions kept per game")
     inbox_poll_seconds: float = Field(
         default=5, ge=0, description="Inbox polling interval, 0 = off"

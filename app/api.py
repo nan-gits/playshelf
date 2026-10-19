@@ -9,7 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from app import images, importer, imports, scanner, stats, updates
+from app import downloads, images, importer, imports, scanner, stats, updates
 from app.accounts import Admin, User
 from app.config import Settings
 from app.db import (
@@ -384,6 +384,50 @@ async def upload_import(
     finally:
         archive.unlink(missing_ok=True)
     return next(p for p in imports.pending(settings, db, user) if p["id"] == imp["id"])
+
+
+# Import from a download link
+
+
+class DownloadStart(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    url: str
+
+
+def get_downloads(request: Request) -> downloads.Downloads:
+    return request.app.state.downloads
+
+
+Downloads = Annotated[downloads.Downloads, Depends(get_downloads)]
+
+
+@router.post("/downloads", status_code=202)
+def start_download(body: DownloadStart, jobs: Downloads, user: User) -> dict[str, Any]:
+    """Downloads an archive from a link in the background and imports it like an upload."""
+    try:
+        return jobs.start(body.url, user["id"]).view()
+    except downloads.DownloadRejected as exc:
+        raise _field_error("url", str(exc)) from exc
+
+
+@router.get("/downloads")
+def list_downloads(jobs: Downloads, user: User) -> list[dict[str, Any]]:
+    """The account's downloads: waiting, running, and finished ones not dismissed yet."""
+    return [job.view() for job in jobs.list(user["id"])]
+
+
+@router.delete("/downloads/{job_id}", status_code=204)
+def remove_download(job_id: str, jobs: Downloads, user: User) -> Response:
+    """Cancels a download, or dismisses a finished one."""
+    job = jobs.get(job_id, user["id"])
+    if job is None:
+        raise HTTPException(404, "There is no such download.")
+    try:
+        jobs.remove(job)
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return Response(status_code=204)
 
 
 @router.get("/imports/limits")

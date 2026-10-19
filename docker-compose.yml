@@ -16,6 +16,7 @@
 #   AUTH (accounts)         accounts = sign in with user accounts, none = no login
 #   PASSWORD_HASH (empty)   only for upgrades: old single password, becomes admin's
 #   MAX_UPLOAD_MB (4096), MAX_EXTRACTED_MB (8192)  size limits for ZIP imports
+#   URL_IMPORT_PRIVATE_NETWORKS (false)  allow "Import from link" in the local network
 #   KEEP_BACKUPS (3)        old versions kept per game after an update
 #   INBOX_POLL_SECONDS (5), INBOX_SETTLE_SECONDS (10)  inbox folder watcher
 #   UPDATE_CHECK_HOURS (24) interval of the online update check, 0 = off
@@ -40,6 +41,7 @@ services:
       - PASSWORD_HASH=${PASSWORD_HASH:-}
       - MAX_UPLOAD_MB=${MAX_UPLOAD_MB:-4096}
       - MAX_EXTRACTED_MB=${MAX_EXTRACTED_MB:-8192}
+      - URL_IMPORT_PRIVATE_NETWORKS=${URL_IMPORT_PRIVATE_NETWORKS:-false}
       - KEEP_BACKUPS=${KEEP_BACKUPS:-3}
       - INBOX_POLL_SECONDS=${INBOX_POLL_SECONDS:-5}
       - INBOX_SETTLE_SECONDS=${INBOX_SETTLE_SECONDS:-10}

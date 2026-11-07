@@ -27,7 +27,7 @@ jobs:
     env:
       PUBLISH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check version and read release notes
         if: env.PUBLISH == 'true'
@@ -56,9 +56,9 @@ jobs:
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
 
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Log in to the GitHub Container Registry
         if: env.PUBLISH == 'true'
@@ -70,7 +70,7 @@ jobs:
 
       - name: Image tags and labels
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}
           # 1.2.3, 1.2 and 1 (no "0" tag while the major version is 0);
@@ -85,7 +85,7 @@ jobs:
             org.opencontainers.image.licenses=AGPL-3.0-or-later
 
       - name: Build and push the image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
